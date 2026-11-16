@@ -1,0 +1,21 @@
+# 비밀 정보: 절대 올리지 않는다
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+
+# 파이썬·도구
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+node_modules/
+
+# 데이터·결과(커져서 올리지 않는 것)
+data/raw/
+*.sqlite
+*.db
+.DS_Store
