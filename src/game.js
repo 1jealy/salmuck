@@ -1,12 +1,7 @@
-// 게임 규칙. 화면과 분리된 순수 로직이라 테스트하기 쉽다.
-// 상태(state)는 평범한 JSON 객체라 저장/복원이 가능하다.
-import { PERIODS, TRAITS, CHEATS, HERRINGS, NEUTRAL_CLOSE, MISLEADING_CLOSE, GUILTY_NOT_FOUND, INNOCENT_FINDS, INSPECT_PROTEST, AMBIENT, SURNAMES, GIVEN_NAMES, LOOKS } from './data.js';
+// 게임 규칙. 화면과 분리된 순수 로직. 상태는 평범한 JSON 객체다.
+import { SEATS, PERIODS, PRECHECK, BUDGET, SURNAMES, GIVEN_NAMES, SLIPS, SCHEMES, HABITS, SCHEME_TELLS, NEUTRAL_PATROL, ID_OK, PROXY_ID_HINT, PROTEST, AMBIENT, LOOKS } from './data.js';
 
-export const SEATS = [1, 2, 3, 4, 5];
-export const ACTIONS_PER_PERIOD = 2;
-export const COMPLAINT_LIMIT = 6;
-
-// 시드 고정 난수: 같은 시험실 번호면 같은 판이 나온다.
+// ---------- 난수 ----------
 export function makeRng(seed) {
   let a = seed >>> 0;
   const next = () => {
@@ -41,26 +36,44 @@ export function randomRoom() {
   return 1000 + Math.floor(Math.random() * 9000);
 }
 
-function fill(text, n, m) {
-  return text.split('{n}').join(String(n)).split('{m}').join(m == null ? '' : String(m));
-}
-
-function actionRng(state, salt) {
+function rngFor(state, salt) {
   return makeRng((Math.imul(state.room, 2654435761) + state.actionIndex * 7919 + salt) >>> 0);
 }
 
-function makeLook(rng) {
-  return {
-    skin: rng.pick(LOOKS.skin),
-    hair: rng.pick(LOOKS.hair),
-    hairStyle: rng.pick(LOOKS.hairStyle),
-    glasses: rng.chance(0.4),
-    clothes: rng.pick(LOOKS.clothes),
-  };
+export function fill(text, n) {
+  return text.split('{n}').join(String(n));
 }
 
+// ---------- 시각 ----------
+function fmt([h, m]) {
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function addMin([h, m], d) {
+  const t = h * 60 + m + d;
+  return [Math.floor(t / 60), t % 60];
+}
+
+export function clock(state) {
+  const p = PERIODS[state.period];
+  switch (state.phase) {
+    case 'precheck': return addMin(PRECHECK.start, state.minutes);
+    case 'idcheck': return addMin(p.start, -10 + (BUDGET.idCheck - state.idLeft) * 2);
+    case 'exam': return addMin(p.start, (BUDGET.patrol - state.patrolLeft) * 20 + 5);
+    case 'ending':
+    case 'bell':
+    case 'break': return p.end;
+    default: return PERIODS[3].end;
+  }
+}
+
+export function clockText(state) {
+  return fmt(clock(state));
+}
+
+// ---------- 생성 ----------
 export function student(state, seat) {
-  return state.students.find((s) => s.seat === seat);
+  return state.students[seat - 1];
 }
 
 export function label(s) {
@@ -68,266 +81,460 @@ export function label(s) {
 }
 
 export function newGame(room) {
-  const rng = makeRng(Math.imul(room, 7919) + 13);
+  const rng = makeRng(Math.imul(room, 7919) + 101);
   const given = rng.shuffle(GIVEN_NAMES);
-  const traitKeys = rng.shuffle(Object.keys(TRAITS));
   const students = SEATS.map((seat, i) => ({
     seat,
     name: rng.pick(SURNAMES) + given[i],
-    trait: traitKeys[i % traitKeys.length],
-    look: makeLook(rng),
-    guilty: false,
-    cheat: null,
-    partner: null,
-    herring: null,
-    closeIdx: 0,
-    herringSeen: false,
+    look: {
+      skin: rng.pick(LOOKS.skin),
+      hair: rng.pick(LOOKS.hair),
+      hairStyle: rng.pick(LOOKS.hairStyle),
+      glasses: rng.chance(0.4),
+      clothes: rng.pick(LOOKS.clothes),
+    },
+    slip: null,
+    scheme: null,
+    habit: null,
+    checked: { id: false, clothes: false, glasses: false, pockets: false },
+    sticker: false,
+    glassesSeenAM: false,
+    slipState: null, // prevented | reported | excused
+    schemeState: null, // caught | flagged
+    habitSeen: false,
+    flagged: false,
     mood: 'normal',
   }));
 
-  // 부정행위자 수: 0명 12%, 1명 70%, 2명 18%
-  const roll = rng.next();
-  const count = roll < 0.12 ? 0 : roll < 0.82 ? 1 : 2;
-  const culpritSeats = rng.shuffle(SEATS).slice(0, count).sort((a, b) => a - b);
-
-  if (count === 2 && rng.chance(0.5)) {
-    const [a, b] = culpritSeats;
-    Object.assign(students[a - 1], { guilty: true, cheat: 'signal', partner: b });
-    Object.assign(students[b - 1], { guilty: true, cheat: 'signal', partner: a });
-  } else {
-    const pool = rng.shuffle(Object.keys(CHEATS).filter((k) => !CHEATS[k].pair));
-    culpritSeats.forEach((seat, i) => Object.assign(students[seat - 1], { guilty: true, cheat: pool[i] }));
+  // 계획형: 65% 확률로 1명
+  const seatsShuffled = rng.shuffle(SEATS);
+  let cursor = 0;
+  if (rng.chance(0.65)) {
+    const key = rng.pick(Object.keys(SCHEMES));
+    const s = students[seatsShuffled[cursor++] - 1];
+    s.scheme = key;
+    if (SCHEMES[key].needsGlasses) s.look.glasses = true;
   }
+  // 실수형: 2~3명
+  const slipKeys = rng.shuffle(Object.keys(SLIPS)).slice(0, rng.int(2, 3));
+  slipKeys.forEach((key) => { students[seatsShuffled[cursor++] - 1].slip = key; });
+  // 무고한 습관: 나머지 중 65%
+  const habitKeys = Object.keys(HABITS);
+  students.filter((s) => !s.scheme && !s.slip).forEach((s) => {
+    if (!rng.chance(0.65)) return;
+    const options = habitKeys.filter((k) => !HABITS[k].needsGlasses || s.look.glasses);
+    s.habit = rng.pick(options);
+  });
 
-  const herringPool = rng.shuffle(Object.keys(HERRINGS));
-  students.filter((s) => !s.guilty).forEach((s, i) => { s.herring = herringPool[i % herringPool.length]; });
-
-  // 교시별 공개 사건 배치
+  // 교시별로 앞에서 보이는 사건 배치
   const schedule = PERIODS.map(() => []);
-  const endSchedule = PERIODS.map(() => []);
-  const spreadPeriods = (min, max) => rng.shuffle([0, 1, 2, 3]).slice(0, rng.int(min, max)).sort((a, b) => a - b);
-
-  for (const s of students) {
-    if (s.guilty) {
-      const c = CHEATS[s.cheat];
-      if (c.pair && s.partner < s.seat) continue; // 짝 신호는 한 번만 배치
-      const texts = rng.shuffle(c.public);
-      if (c.periods) {
-        const p = c.periods[0];
-        schedule[p].push({ text: fill(texts[0], s.seat, s.partner), seats: [s.seat] });
-        endSchedule[p].push({ text: fill(texts[1 % texts.length], s.seat, s.partner), seats: [s.seat] });
-      } else {
-        spreadPeriods(2, 3).forEach((p, i) => {
-          const ev = { text: fill(texts[i % texts.length], s.seat, s.partner), seats: s.partner ? [s.seat, s.partner] : [s.seat] };
-          (c.atEnd ? endSchedule : schedule)[p].push(ev);
-        });
-      }
-    } else {
-      const h = HERRINGS[s.herring];
-      const texts = rng.shuffle(h.public);
-      spreadPeriods(1, 2).forEach((p, i) => {
-        schedule[p].push({ text: fill(texts[i % texts.length], s.seat), seats: [s.seat] });
-      });
+  const bellAt = rng.int(0, 3);
+  students.forEach((s) => {
+    if (s.habit) {
+      const h = HABITS[s.habit];
+      const periods = h.falls ? [rng.int(0, 3)] : rng.shuffle([0, 1, 2, 3]).slice(0, rng.int(1, 2));
+      periods.forEach((p) => schedule[p].push({ kind: h.falls ? 'sticker' : 'habit', seat: s.seat, text: fill(h.line, s.seat) }));
     }
-  }
+    if (s.scheme === 'buttonCam') {
+      rng.shuffle([0, 1, 2, 3]).slice(0, rng.int(2, 3)).forEach((p) => {
+        schedule[p].push({ kind: 'sticker', seat: s.seat, text: `${s.seat}번 수험생의 단추 스티커가 떨어져 있다.` });
+      });
+      schedule[rng.int(0, 3)].push({ kind: 'tell', seat: s.seat, text: fill(SCHEME_TELLS.buttonCam.line[0], s.seat) });
+    }
+    if (s.scheme === 'aiGlasses') {
+      [2, 3].forEach((p) => schedule[p].push({ kind: 'tell', seat: s.seat, text: fill(rng.pick(SCHEME_TELLS.aiGlasses.line), s.seat) }));
+    }
+    if (s.scheme === 'proxy' && rng.chance(0.5)) {
+      schedule[rng.int(0, 3)].push({ kind: 'tell', seat: s.seat, text: fill(SCHEME_TELLS.proxy.line[0], s.seat) });
+    }
+  });
   PERIODS.forEach((_, p) => {
-    if (rng.chance(0.55)) {
+    if (rng.chance(0.6)) {
       const options = AMBIENT.filter((a) => a.period == null || a.period === p);
-      schedule[p].push({ text: rng.pick(options).text, seats: [] });
+      schedule[p].push({ kind: 'ambient', seat: null, text: rng.pick(options).text });
     }
   });
 
   const state = {
-    v: 1,
+    v: 2,
     room,
-    phase: 'play',
+    phase: 'precheck',
     period: 0,
-    actionsLeft: ACTIONS_PER_PERIOD,
-    inspectLeft: 1,
+    minutes: 0,
+    announced: false,
+    alertDone: false,
+    idLeft: BUDGET.idCheck,
+    patrolLeft: BUDGET.patrol,
+    afterLeft: BUDGET.afterCheck,
     complaints: 0,
     actionIndex: 0,
     students,
     schedule: schedule.map((list) => rng.shuffle(list)),
-    endSchedule,
+    bellAt,
+    pending: null,
     log: [],
-    quotes: [],
-    accused: [],
     result: null,
   };
-  startPeriod(state);
+  log(state, 'system', '08:10 입실 마감. 30분 안에 본인 확인과 점검을 마쳐야 한다. 끝내지 못한 수험생은 부감독관이 기본 점검(단추 스티커)만 한다.');
   return state;
 }
 
-function push(state, entry) {
-  state.log.push({ period: state.period, ...entry });
+// ---------- 공통 ----------
+function log(state, kind, text, seat = null) {
+  state.log.push({ time: clockText(state), kind, text, seat });
 }
 
-function startPeriod(state) {
-  const p = PERIODS[state.period];
-  push(state, { kind: 'period', text: `${p.label} ${p.subject} 시작 · ${p.start}` });
-  state.schedule[state.period].forEach((ev) => push(state, { kind: 'event', text: ev.text, seats: ev.seats }));
+function busy(state) {
+  return state.pending != null || state.phase === 'result';
 }
 
-function canAct(state) {
-  return state.phase === 'play' && state.actionsLeft > 0;
-}
-
-function spend(state) {
-  state.actionsLeft -= 1;
-  state.actionIndex += 1;
-}
-
-function cheatActive(state, s) {
-  const c = CHEATS[s.cheat];
-  return !c.periods || c.periods.includes(state.period);
-}
-
-export function observe(state, seat) {
-  if (!canAct(state)) return null;
-  const s = student(state, seat);
-  const rng = actionRng(state, 1);
-  let text;
-  if (s.guilty) {
-    const c = CHEATS[s.cheat];
-    if (cheatActive(state, s) && rng.chance(0.7)) {
-      text = fill(c.close[s.closeIdx % c.close.length], s.seat, s.partner);
-      s.closeIdx += 1;
-    } else {
-      text = rng.chance(0.25) ? rng.pick(MISLEADING_CLOSE) : rng.pick(NEUTRAL_CLOSE);
-    }
-  } else if (!s.herringSeen) {
-    text = rng.pick(HERRINGS[s.herring].close);
-    s.herringSeen = true;
-  } else {
-    text = rng.chance(0.25) ? rng.pick(MISLEADING_CLOSE) : rng.pick(NEUTRAL_CLOSE);
-  }
-  push(state, { kind: 'observe', seats: [seat], text });
-  spend(state);
-  return text;
-}
-
-export function talk(state, seat) {
-  if (!canAct(state)) return null;
-  const s = student(state, seat);
-  const rng = actionRng(state, 2);
-  let line;
-  if (s.guilty && cheatActive(state, s) && rng.chance(0.55)) {
-    line = fill(rng.pick(CHEATS[s.cheat].guiltyLines), s.seat, s.partner);
-  } else if (!s.guilty && rng.chance(0.55)) {
-    line = rng.pick(HERRINGS[s.herring].lines);
-  } else {
-    line = rng.pick(TRAITS[s.trait].lines);
-  }
+function askSlip(state, s, text) {
+  const rng = rngFor(state, 9);
+  state.pending = { seat: s.seat, text, reaction: rng.pick(SLIPS[s.slip].reaction) };
   s.mood = 'nervous';
-  state.complaints += 1;
-  state.quotes.push({ seat, name: s.name, text: line });
-  push(state, { kind: 'talk', seats: [seat], text: line });
-  spend(state);
-  return line;
+  log(state, 'found', text, s.seat);
 }
 
-export function inspect(state, seat) {
-  if (!canAct(state) || state.inspectLeft < 1) return null;
-  const s = student(state, seat);
-  const rng = actionRng(state, 3);
-  let text;
-  if (s.guilty) {
-    const c = CHEATS[s.cheat];
-    text = c.inspect.found ? c.inspect.text : GUILTY_NOT_FOUND;
-    s.mood = c.inspect.found ? 'shocked' : 'nervous';
+export function resolvePending(state, choice) {
+  const p = state.pending;
+  if (!p) return;
+  const s = student(state, p.seat);
+  if (choice === 'report') {
+    s.slipState = 'reported';
+    s.mood = 'crying';
+    log(state, 'decision', `부정행위로 처리했다. 답안지를 회수하고 시험본부에 보고했다. "${p.reaction}"`, s.seat);
   } else {
-    text = HERRINGS[s.herring].inspect || rng.pick(INNOCENT_FINDS);
-    s.mood = 'wronged';
-    state.complaints += 2;
-    const protest = rng.pick(INSPECT_PROTEST);
-    state.quotes.push({ seat, name: s.name, text: protest });
-    text += ` "${protest}"`;
+    s.slipState = 'excused';
+    s.mood = 'normal';
+    log(state, 'decision', `주의만 주고 넘어갔다. "${p.reaction}"`, s.seat);
   }
-  state.inspectLeft -= 1;
-  push(state, { kind: 'inspect', seats: [seat], text });
-  spend(state);
-  return text;
+  state.pending = null;
+  state.actionIndex += 1;
+  continueAfterPending(state);
 }
 
-export function endPeriod(state) {
-  if (state.phase !== 'play') return;
+export function toggleFlag(state, seat) {
+  if (state.phase === 'result') return;
+  const s = student(state, seat);
+  s.flagged = !s.flagged;
+}
+
+// ---------- 입실 점검 (08:10~08:40) ----------
+export function precheckCost(state, kind) {
+  return PRECHECK.cost[kind];
+}
+
+export function canPrecheck(state, kind, seat) {
+  if (state.phase !== 'precheck' || busy(state)) return false;
+  if (state.minutes + PRECHECK.cost[kind] > PRECHECK.minutes) return false;
+  if (kind === 'announce') return !state.announced;
+  const s = student(state, seat);
+  if (!s) return false;
+  if (kind === 'glasses' && !s.look.glasses) return false;
+  return !s.checked[kind];
+}
+
+export function precheck(state, kind, seat) {
+  if (!canPrecheck(state, kind, seat)) return false;
+  const rng = rngFor(state, 1);
+  state.minutes += PRECHECK.cost[kind];
+  state.actionIndex += 1;
+
+  if (kind === 'announce') {
+    state.announced = true;
+    log(state, 'action', '"전자기기를 지금 내면 문제없습니다. 시험 시작 후에 나오면 부정행위입니다." 교실 전체에 다시 안내했다.');
+    state.students.forEach((s) => {
+      if (s.slip && (SLIPS[s.slip].pocket || SLIPS[s.slip].sleeve) && !s.slipState && rng.chance(0.5)) {
+        s.slipState = 'prevented';
+        log(state, 'prevent', `${s.seat}번 수험생이 머뭇거리다 ${SLIPS[s.slip].sleeve ? '손목에서 시계를 풀어' : '주머니에서 꺼내'} 제출한다.`, s.seat);
+      }
+    });
+  } else {
+    const s = student(state, seat);
+    s.checked[kind] = true;
+    if (kind === 'id') {
+      const hint = s.scheme === 'proxy' && rng.chance(0.6);
+      log(state, 'check', `본인 확인: ${hint ? rng.pick(PROXY_ID_HINT) : rng.pick(ID_OK)}`, seat);
+    } else if (kind === 'clothes') {
+      s.sticker = true;
+      let text = '소매를 걷게 하고 옷깃과 단추를 확인했다. 단추마다 스티커를 붙였다.';
+      if (s.slip && SLIPS[s.slip].sleeve && !s.slipState) {
+        s.slipState = 'prevented';
+        text += ' 손목에 전자시계가 있어 시험 전에 제출받았다.';
+      } else if (s.scheme === 'buttonCam' && rng.chance(0.4)) {
+        text += ' 두 번째 단추가 다른 단추보다 조금 큰 것 같다. 스티커로 덮었다.';
+      }
+      log(state, 'check', text, seat);
+    } else if (kind === 'glasses') {
+      s.glassesSeenAM = true;
+      log(state, 'check', '안경을 벗어 책상에 올리게 했다. 얇은 검은 테의 평범한 안경이다. 모양을 기억해 둔다.', seat);
+    } else if (kind === 'pockets') {
+      if (s.slip && SLIPS[s.slip].pocket && !s.slipState) {
+        s.slipState = 'prevented';
+        log(state, 'prevent', `${SLIPS[s.slip].find} 시험 전이라 제출받았다.`, seat);
+      } else {
+        log(state, 'check', '휴대 물품을 확인했다. 수험표, 신분증, 컴퓨터용 사인펜뿐이다.', seat);
+      }
+    }
+  }
+  maybeAlert(state);
+  return true;
+}
+
+function maybeAlert(state) {
+  if (state.alertDone || state.minutes < PRECHECK.alertAt) return;
+  state.alertDone = true;
+  const saved = state.minutes;
+  state.minutes = PRECHECK.alertAt;
+  log(state, 'alert', '08:25 위급재난문자 발송.');
+  const ringers = state.students.filter((s) => s.slip && SLIPS[s.slip].ring && !s.slipState);
+  if (ringers.length) {
+    ringers.forEach((s) => {
+      s.slipState = 'prevented';
+      s.mood = 'nervous';
+      log(state, 'prevent', `${s.seat}번 수험생 외투에서 알림음이 크게 울린다. 시험 전이라 휴대폰을 제출받았다. "${SLIPS[s.slip].reaction[0]}"`, s.seat);
+    });
+  } else {
+    log(state, 'system', '교실은 조용하다. 옆 교실 어딘가에서 알림음이 들린다.');
+  }
+  state.minutes = saved;
+}
+
+export function finishPrecheck(state) {
+  if (state.phase !== 'precheck' || busy(state)) return;
+  state.minutes = PRECHECK.minutes;
+  maybeAlert(state);
+  const rest = state.students.filter((s) => !s.checked.clothes);
+  rest.forEach((s) => { s.sticker = true; });
+  if (rest.length) log(state, 'system', `부감독관이 나머지 ${rest.length}명의 단추에 스티커만 붙였다. 소매와 주머니는 확인하지 못했다.`);
+  state.actionIndex += 1;
+  startExam(state);
+}
+
+// ---------- 교시 ----------
+function startExam(state) {
   const p = PERIODS[state.period];
-  state.endSchedule[state.period].forEach((ev) => push(state, { kind: 'event', text: ev.text, seats: ev.seats }));
-  push(state, { kind: 'system', text: `${p.label} 종료 · ${p.end}. 답안지를 걷었다.` });
+  state.phase = 'exam';
+  state.patrolLeft = BUDGET.patrol;
+  log(state, 'period', `${p.label} ${p.subject} 시작`);
+  state.schedule[state.period].forEach((ev) => {
+    log(state, ev.kind === 'ambient' ? 'ambient' : 'event', ev.text, ev.seat);
+    if (ev.kind === 'sticker') {
+      student(state, ev.seat).sticker = true;
+      log(state, 'action', '다가가서 스티커를 다시 붙였다.', ev.seat);
+    }
+  });
+}
+
+export function canIdCheck(state, seat) {
+  return state.phase === 'idcheck' && !busy(state) && state.idLeft > 0 && !!student(state, seat);
+}
+
+export function idCheck(state, seat) {
+  if (!canIdCheck(state, seat)) return false;
+  const s = student(state, seat);
+  const rng = rngFor(state, 2);
+  const p = state.period;
+  state.idLeft -= 1;
+  state.actionIndex += 1;
+
+  const slip = s.slip ? SLIPS[s.slip] : null;
+  if (slip && !s.slipState && slip.sleeve && p <= 2) {
+    askSlip(state, s, `본인 확인 중 소매를 걷게 했다. ${slip.find}`);
+    return true;
+  }
+  if (slip && !s.slipState && slip.pocket && p === 2) {
+    askSlip(state, s, `3교시 전 휴대 물품 재점검. ${slip.find}`);
+    return true;
+  }
+  const parts = [];
+  if (s.scheme === 'proxy' && rng.chance(0.4)) parts.push(rng.pick(PROXY_ID_HINT));
+  else parts.push(rng.pick(ID_OK));
+  if (s.look.glasses) {
+    const swapped = s.scheme === 'aiGlasses' && p > SCHEMES.aiGlasses.swapAfter;
+    if (swapped && s.glassesSeenAM) parts.push('그런데 안경이 오전에 본 것과 다르다. 테가 두껍고 다리가 넓다.');
+    else if (swapped) parts.push('안경은 두꺼운 검은 테다. 오전에도 이랬는지 기억나지 않는다.');
+    else parts.push('안경을 쓴 채로 확인했다. 특이점은 없다.');
+  }
+  if (p <= 2) parts.push('소매 안쪽도 이상 없다.');
+  log(state, 'check', `본인 확인: ${parts.join(' ')}`, seat);
+  return true;
+}
+
+export function finishIdCheck(state) {
+  if (state.phase !== 'idcheck' || busy(state)) return;
+  state.actionIndex += 1;
+  startExam(state);
+}
+
+function schemeActive(s, period) {
+  if (!s.scheme) return false;
+  if (s.scheme === 'aiGlasses') return period > SCHEMES.aiGlasses.swapAfter;
+  return true;
+}
+
+export function canPatrol(state, seat) {
+  return state.phase === 'exam' && !busy(state) && state.patrolLeft > 0 && !!student(state, seat);
+}
+
+export function patrol(state, seat) {
+  if (!canPatrol(state, seat)) return false;
+  const s = student(state, seat);
+  const rng = rngFor(state, 3);
+  state.patrolLeft -= 1;
+  state.actionIndex += 1;
+
+  const slip = s.slip ? SLIPS[s.slip] : null;
+  if (slip && !s.slipState && slip.sleeve && rng.chance(0.7)) {
+    askSlip(state, s, `순회 중: ${slip.patrol} 다가가 확인하니 전자시계다.`);
+    return true;
+  }
+  let text;
+  if (slip && !s.slipState && slip.pocket && rng.chance(0.6)) text = slip.patrol;
+  else if (schemeActive(s, state.period) && rng.chance(0.7)) text = rng.pick(SCHEME_TELLS[s.scheme].patrol);
+  else if (s.habit && (!s.habitSeen || rng.chance(0.4))) { text = HABITS[s.habit].patrol; s.habitSeen = true; }
+  else text = rng.pick(NEUTRAL_PATROL);
+  log(state, 'patrol', `순회 중: ${text}`, seat);
+  return true;
+}
+
+export function endExam(state) {
+  if (state.phase !== 'exam' || busy(state)) return;
+  const p = state.period;
+  state.actionIndex += 1;
+  state.patrolLeft = 0;
+  const s4 = state.students.find((s) => s.slip === 'section4' && !s.slipState);
+  if (p === 3 && s4) {
+    askSlip(state, s4, fill(SLIPS.section4.event, s4.seat));
+    state.phase = 'ending';
+    return;
+  }
+  ringBell(state);
+}
+
+function ringBell(state) {
+  const p = state.period;
+  const bell = state.students.find((s) => s.slip === 'bell' && !s.slipState);
+  if (bell && state.bellAt === p) {
+    state.phase = 'bell';
+    askSlip(state, bell, fill(SLIPS.bell.event, bell.seat));
+    return;
+  }
+  toBreak(state);
+}
+
+// 4교시 위반 → 종료령 → 쉬는 시간 순서로 이어 준다.
+export function continueAfterPending(state) {
+  if (state.pending) return;
+  if (state.phase === 'ending') ringBell(state);
+  else if (state.phase === 'bell') toBreak(state);
+}
+
+function toBreak(state) {
+  const p = PERIODS[state.period];
+  state.phase = 'break';
+  state.afterLeft = BUDGET.afterCheck;
+  log(state, 'system', `${p.label} 종료. 답안지를 걷었다.${state.period === 1 ? ' 이제 점심시간이다.' : ''}`);
   state.students.forEach((s) => { if (s.mood === 'nervous') s.mood = 'normal'; });
+}
+
+export function canAfterCheck(state, seat) {
+  return state.phase === 'break' && !busy(state) && state.afterLeft > 0 && !!student(state, seat);
+}
+
+// 교시 후 점검: 시험본부에서 금속탐지기와 정밀 점검
+export function afterCheck(state, seat) {
+  if (!canAfterCheck(state, seat)) return false;
+  const s = student(state, seat);
+  const rng = rngFor(state, 4);
+  state.afterLeft -= 1;
+  state.actionIndex += 1;
+
+  if (s.scheme && schemeActive(s, state.period)) {
+    s.schemeState = 'caught';
+    s.mood = 'shocked';
+    log(state, 'caught', `교시 후 점검: ${SCHEMES[s.scheme].found} ${SCHEMES[s.scheme].caught}`, seat);
+    return true;
+  }
+  const slip = s.slip ? SLIPS[s.slip] : null;
+  if (slip && !s.slipState && (slip.pocket || slip.sleeve)) {
+    askSlip(state, s, `교시 후 점검: ${slip.find}`);
+    return true;
+  }
+  state.complaints += 1;
+  if (s.scheme) {
+    s.mood = 'calm';
+    log(state, 'clean', `교시 후 점검: 아무것도 나오지 않았다. "${rng.pick(SCHEMES[s.scheme].calm)}" 끝까지 침착하다.`, seat);
+  } else {
+    s.mood = 'angry';
+    log(state, 'clean', `교시 후 점검: 아무것도 나오지 않았다. "${rng.pick(PROTEST)}" 민원 1건.`, seat);
+  }
+  return true;
+}
+
+export function nextPeriod(state) {
+  if (state.phase !== 'break' || busy(state)) return;
   state.actionIndex += 1;
   if (state.period < PERIODS.length - 1) {
     state.period += 1;
-    state.actionsLeft = ACTIONS_PER_PERIOD;
-    startPeriod(state);
+    state.phase = 'idcheck';
+    state.idLeft = BUDGET.idCheck;
+    log(state, 'period', `${PERIODS[state.period].label} 본인 확인 시간${state.period === 2 ? ' · 휴대 물품 재점검 포함' : ''}`);
   } else {
-    state.phase = 'accuse';
-    state.actionsLeft = 0;
-    push(state, { kind: 'system', text: '모든 교시가 끝났다. 감독 보고서를 쓸 시간이다.' });
+    state.phase = 'report';
+    log(state, 'system', '모든 시험이 끝났다. 감독 보고서를 쓴다. 증거는 없지만 의심되는 수험생은 사후 조사를 요청할 수 있다.');
   }
 }
 
-export function toggleAccuse(state, seat) {
-  if (state.phase !== 'accuse') return;
-  const i = state.accused.indexOf(seat);
-  if (i >= 0) state.accused.splice(i, 1);
-  else state.accused.push(seat);
-  state.accused.sort((a, b) => a - b);
-}
-
-export function score({ culprits, accused, complaints }) {
-  const caught = accused.filter((s) => culprits.includes(s)).length;
-  const falseCount = accused.length - caught;
-  const missed = culprits.length - caught;
-  const total = culprits.length;
-
-  let grade;
-  if (total === 0) grade = falseCount === 0 ? 1 : 6 + Math.min(falseCount, 3);
-  else if (caught === total && falseCount === 0) grade = 1;
-  else if (caught === total) grade = 4;
-  else if (caught > 0 && falseCount === 0) grade = 3;
-  else if (caught > 0) grade = 5;
-  else if (falseCount === 0) grade = 7;
-  else grade = 9;
-  if (complaints >= COMPLAINT_LIMIT) grade += 2;
-  else if (complaints >= 4) grade += 1;
-  grade = Math.max(1, Math.min(9, grade));
+// ---------- 채점 ----------
+export function submitReport(state) {
+  if (state.phase !== 'report') return null;
+  let score = 100;
+  const tally = { prevented: 0, reported: 0, excused: 0, missedSlip: 0, falseFlags: 0 };
+  let scheme = null;
+  state.students.forEach((s) => {
+    if (s.slip) {
+      if (s.slipState === 'prevented') tally.prevented += 1;
+      else if (s.slipState === 'reported') tally.reported += 1;
+      else if (s.slipState === 'excused') { tally.excused += 1; score -= 15; }
+      else { tally.missedSlip += 1; score -= 10; }
+    }
+    if (s.scheme) {
+      if (s.schemeState !== 'caught' && s.flagged) s.schemeState = 'flagged';
+      scheme = { seat: s.seat, key: s.scheme, state: s.schemeState || 'missed' };
+      if (s.schemeState === 'flagged') score -= 15;
+      if (!s.schemeState) score -= 40;
+    } else if (s.flagged && !s.slip) {
+      tally.falseFlags += 1;
+      score -= 10;
+    }
+  });
+  score -= state.complaints * 5;
+  score = Math.max(0, Math.min(100, score));
+  const grade = score >= 90 ? 1 : score >= 80 ? 2 : score >= 70 ? 3 : score >= 60 ? 4 : score >= 50 ? 5 : score >= 40 ? 6 : score >= 30 ? 7 : score >= 20 ? 8 : 9;
 
   let title;
-  if (total === 0 && falseCount === 0) title = '평화를 지킨 감독관';
-  else if (total === 0) title = '죄 없는 수험생을 잡은 감독관';
-  else if (caught === total && falseCount === 0) title = complaints >= 4 ? '시끄러운 명탐정' : '매의 눈';
-  else if (caught === 0 && falseCount > 0) title = '엉뚱한 수험생을 잡은 감독관';
-  else if (caught === 0) title = '아무것도 못 본 감독관';
-  else if (falseCount > 0) title = '반은 맞고 반은 민원';
-  else title = '아깝게 놓친 감독관';
-  if (complaints >= COMPLAINT_LIMIT && grade >= 3) title = '민원 폭탄 감독관';
+  if (scheme && scheme.state === 'caught') title = grade <= 2 ? '2년의 준비를 무너뜨린 감독관' : '잡긴 잡은 감독관';
+  else if (scheme && scheme.state === 'missed') title = '아무 일 없던 시험실… 이었을까?';
+  else if (state.complaints + tally.falseFlags >= 4) title = '민원 폭탄 감독관';
+  else if (tally.excused > 0) title = '마음 약한 감독관';
+  else if (scheme) title = '촉은 맞았던 감독관';
+  else if (grade <= 2) title = '원칙대로 지킨 감독관';
+  else title = '무난한 감독관';
 
-  return { grade, title, caught, falseCount, missed, total };
-}
-
-export function submitReport(state) {
-  if (state.phase !== 'accuse') return null;
-  const culprits = state.students.filter((s) => s.guilty).map((s) => s.seat);
-  const result = score({ culprits, accused: state.accused, complaints: state.complaints });
-  const rng = actionRng(state, 4);
-  result.quote = state.quotes.length ? rng.pick(state.quotes) : null;
-  state.result = result;
+  state.result = { score, grade, title, scheme, ...tally, complaints: state.complaints };
   state.phase = 'result';
-  state.students.forEach((s) => {
-    if (state.accused.includes(s.seat)) s.mood = s.guilty ? 'shocked' : 'wronged';
-  });
-  return result;
+  return state.result;
 }
 
 export function truth(s) {
-  if (s.guilty) return { guilty: true, name: CHEATS[s.cheat].name, text: fill(CHEATS[s.cheat].reveal, s.seat, s.partner) };
-  return { guilty: false, name: '무고', text: HERRINGS[s.herring].reveal };
+  if (s.scheme) return { tag: '계획형', name: SCHEMES[s.scheme].name, text: SCHEMES[s.scheme].reveal };
+  if (s.slip) return { tag: '실수형', name: SLIPS[s.slip].name, text: SLIPS[s.slip].reveal };
+  return { tag: '무고', name: '', text: s.habit ? '수상해 보인 행동은 그냥 습관이었다.' : '아무 문제 없이 시험을 봤다.' };
 }
 
-export function clockTime(state) {
-  const p = PERIODS[Math.min(state.period, PERIODS.length - 1)];
-  const used = state.phase === 'play' ? ACTIONS_PER_PERIOD - state.actionsLeft : ACTIONS_PER_PERIOD + 1;
-  const minutes = p.clock[0] * 60 + p.clock[1] + used * 25;
-  return [Math.floor(minutes / 60), minutes % 60];
+export function outcome(s) {
+  if (s.scheme) return { caught: '적발', flagged: '사후 조사로 적발', missed: '놓침' }[s.schemeState || 'missed'];
+  if (s.slip) return { prevented: '시험 전 예방', reported: '부정행위 처리', excused: '봐줌' }[s.slipState] || '놓침';
+  return s.flagged ? '잘못 의심' : '';
 }

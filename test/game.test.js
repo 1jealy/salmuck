@@ -1,12 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { newGame, observe, talk, inspect, endPeriod, toggleAccuse, submitReport, score, normalizeRoom, truth, ACTIONS_PER_PERIOD } from '../src/game.js';
-import { CHEATS } from '../src/data.js';
+import { newGame, precheck, finishPrecheck, idCheck, finishIdCheck, patrol, endExam, afterCheck, nextPeriod, resolvePending, toggleFlag, submitReport, normalizeRoom, truth, student } from '../src/game.js';
+import { SLIPS, SCHEMES } from '../src/data.js';
 
-const ROOMS = Array.from({ length: 400 }, (_, i) => 1000 + i * 17);
+const ROOMS = Array.from({ length: 500 }, (_, i) => 1000 + i * 17);
 
-function countClues(state, seat) {
-  return [...state.schedule, ...state.endSchedule].flat().filter((ev) => ev.seats.includes(seat)).length;
+// 아무 선택이나 해서 끝까지 진행하는 도우미
+function playThrough(state, pick = (n) => n % 12 + 1) {
+  let k = 0;
+  const settle = () => { while (state.pending) resolvePending(state, k++ % 2 ? 'report' : 'excuse'); };
+  precheck(state, 'announce');
+  for (let i = 0; i < 6; i++) { precheck(state, 'clothes', pick(k++)); settle(); }
+  finishPrecheck(state);
+  settle();
+  for (let p = 0; p < 4; p++) {
+    if (state.phase === 'idcheck') { for (let i = 0; i < 3; i++) { idCheck(state, pick(k++)); settle(); } finishIdCheck(state); }
+    for (let i = 0; i < 3; i++) { patrol(state, pick(k++)); settle(); }
+    endExam(state);
+    settle();
+    assert.equal(state.phase, 'break');
+    afterCheck(state, pick(k++));
+    settle();
+    nextPeriod(state);
+  }
+  assert.equal(state.phase, 'report');
+  return submitReport(state);
 }
 
 test('같은 시험실 번호면 같은 판이 나온다', () => {
@@ -14,74 +32,98 @@ test('같은 시험실 번호면 같은 판이 나온다', () => {
   assert.notDeepEqual(newGame(4271).students, newGame(4272).students);
 });
 
-test('부정행위자는 0~2명이고 모두 단서가 2개 이상 있다', () => {
-  const counts = [0, 0, 0];
+test('판 구성: 계획형 0~1명, 실수형 2~3명, 겹치지 않음', () => {
+  let schemeGames = 0;
   for (const room of ROOMS) {
     const s = newGame(room);
-    const culprits = s.students.filter((x) => x.guilty);
-    assert.ok(culprits.length <= 2);
-    counts[culprits.length] += 1;
-    for (const c of culprits) {
-      assert.ok(CHEATS[c.cheat], `알 수 없는 부정행위 ${c.cheat}`);
-      assert.ok(countClues(s, c.seat) >= 2, `시험실 ${room} ${c.seat}번 단서 부족`);
-      if (c.partner) assert.equal(s.students[c.partner - 1].partner, c.seat);
-    }
-    for (const x of s.students.filter((y) => !y.guilty)) assert.ok(x.herring);
+    const schemes = s.students.filter((x) => x.scheme);
+    const slips = s.students.filter((x) => x.slip);
+    assert.ok(schemes.length <= 1);
+    assert.ok(slips.length >= 2 && slips.length <= 3);
+    s.students.forEach((x) => assert.ok(!(x.scheme && x.slip)));
+    schemes.forEach((x) => { if (SCHEMES[x.scheme].needsGlasses) assert.ok(x.look.glasses); });
+    if (schemes.length) schemeGames += 1;
   }
-  assert.ok(counts.every((n) => n > 0), `분포 ${counts}`);
+  assert.ok(schemeGames > ROOMS.length * 0.5 && schemeGames < ROOMS.length * 0.8, `계획형 비율 ${schemeGames}`);
 });
 
-test('남은 텍스트에 {n}, {m} 자리표시가 없다', () => {
-  for (const room of ROOMS) {
+test('입실 점검은 30분을 넘지 않고 08:25 재난문자는 한 번만', () => {
+  const s = newGame(3333);
+  for (let seat = 1; seat <= 12; seat++) { precheck(s, 'clothes', seat); precheck(s, 'id', seat); }
+  assert.ok(s.minutes <= 30);
+  finishPrecheck(s);
+  assert.equal(s.log.filter((e) => e.kind === 'alert').length, 1);
+  assert.equal(s.phase, 'exam');
+  assert.ok(s.students.every((x) => x.sticker));
+});
+
+test('켜진 휴대폰은 재난문자로 시험 전에 예방된다', () => {
+  const room = ROOMS.find((r) => newGame(r).students.some((x) => x.slip === 'phoneOn'));
+  const s = newGame(room);
+  finishPrecheck(s);
+  assert.equal(s.students.find((x) => x.slip === 'phoneOn').slipState, 'prevented');
+});
+
+test('스마트안경은 점심 전 점검에서는 깨끗하고 오후에는 적발된다', () => {
+  const room = ROOMS.find((r) => newGame(r).students.some((x) => x.scheme === 'aiGlasses'));
+  const early = newGame(room);
+  const seat = early.students.find((x) => x.scheme === 'aiGlasses').seat;
+  finishPrecheck(early);
+  endExam(early);
+  while (early.pending) resolvePending(early, 'report');
+  afterCheck(early, seat);
+  assert.notEqual(student(early, seat).schemeState, 'caught');
+
+  const late = newGame(room);
+  finishPrecheck(late);
+  for (let p = 0; p < 3; p++) {
+    if (late.phase === 'idcheck') finishIdCheck(late);
+    endExam(late);
+    while (late.pending) resolvePending(late, 'report');
+    if (p < 2) nextPeriod(late);
+  }
+  afterCheck(late, seat);
+  assert.equal(student(late, seat).schemeState, 'caught');
+});
+
+test('어떤 판이든 끝까지 진행되고 등급은 1~9', () => {
+  for (const room of ROOMS.slice(0, 200)) {
+    const r = playThrough(newGame(room));
+    assert.ok(r.grade >= 1 && r.grade <= 9);
+    assert.ok(r.title);
+  }
+});
+
+test('남은 텍스트에 자리표시가 없다', () => {
+  for (const room of ROOMS.slice(0, 200)) {
     const s = newGame(room);
-    const all = [...s.schedule, ...s.endSchedule].flat().map((e) => e.text);
-    for (const t of all) assert.ok(!/[{}]/.test(t), t);
-    for (const x of s.students) assert.ok(!/[{}]/.test(truth(x).text));
+    playThrough(s);
+    s.log.forEach((e) => assert.ok(!/[{}]/.test(e.text), e.text));
+    s.students.forEach((x) => assert.ok(!/[{}]/.test(truth(x).text)));
   }
 });
 
-test('한 판을 끝까지 진행할 수 있다', () => {
-  const s = newGame(1234);
-  for (let p = 0; p < 4; p++) {
-    assert.equal(s.actionsLeft, ACTIONS_PER_PERIOD);
-    assert.ok(observe(s, 1));
-    assert.ok(talk(s, 2));
-    assert.equal(observe(s, 3), null, '행동을 다 쓰면 더 못 한다');
-    endPeriod(s);
+test('무고한 수험생 교시 후 점검은 민원 1건, 의심 표시는 감점', () => {
+  const room = ROOMS.find((r) => newGame(r).students[0].slip == null && newGame(r).students[0].scheme == null);
+  const s = newGame(room);
+  finishPrecheck(s);
+  endExam(s);
+  while (s.pending) resolvePending(s, 'report');
+  afterCheck(s, 1);
+  assert.equal(s.complaints, 1);
+  toggleFlag(s, 1);
+  assert.ok(student(s, 1).flagged);
+});
+
+test('실수형 데이터 형식', () => {
+  for (const [k, v] of Object.entries(SLIPS)) {
+    assert.ok(v.reaction.length >= 1, k);
+    assert.ok(v.reveal, k);
   }
-  assert.equal(s.phase, 'accuse');
-  toggleAccuse(s, 3);
-  toggleAccuse(s, 5);
-  toggleAccuse(s, 5);
-  assert.deepEqual(s.accused, [3]);
-  const r = submitReport(s);
-  assert.equal(s.phase, 'result');
-  assert.ok(r.grade >= 1 && r.grade <= 9);
-  assert.ok(r.title);
-});
-
-test('소지품 검사는 한 번만, 무고한 수험생이면 민원 2건', () => {
-  const s = newGame(2222);
-  const innocent = s.students.find((x) => !x.guilty);
-  inspect(s, innocent.seat);
-  assert.equal(s.complaints, 2);
-  assert.equal(s.inspectLeft, 0);
-  assert.equal(inspect(s, innocent.seat), null);
-});
-
-test('채점 규칙', () => {
-  assert.equal(score({ culprits: [2], accused: [2], complaints: 0 }).grade, 1);
-  assert.equal(score({ culprits: [2], accused: [2], complaints: 0 }).title, '매의 눈');
-  assert.equal(score({ culprits: [], accused: [], complaints: 1 }).title, '평화를 지킨 감독관');
-  assert.equal(score({ culprits: [2], accused: [4], complaints: 0 }).grade, 9);
-  assert.equal(score({ culprits: [2], accused: [], complaints: 0 }).grade, 7);
-  assert.equal(score({ culprits: [2, 4], accused: [2], complaints: 0 }).grade, 3);
-  assert.equal(score({ culprits: [2], accused: [2], complaints: 6 }).grade, 3);
-  assert.equal(score({ culprits: [2], accused: [3], complaints: 7 }).title, '민원 폭탄 감독관');
 });
 
 test('시험실 번호 정규화', () => {
   assert.equal(normalizeRoom('4271'), 4271);
-  assert.equal(normalizeRoom('room-0042'), null);
+  assert.equal(normalizeRoom('42'), null);
   assert.equal(normalizeRoom('abc'), null);
 });

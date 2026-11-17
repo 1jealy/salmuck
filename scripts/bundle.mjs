@@ -1,30 +1,54 @@
 // 모든 파일을 HTML 한 장으로 묶는다(미리보기·단일 파일 배포용).
+// 글꼴은 실제로 쓰는 글자만 남겨(서브셋) data URI로 넣는다. 서브셋에는 Python fonttools가 필요하다.
+//   pip install fonttools brotli
 // 사용법: node scripts/bundle.mjs [출력경로]   기본: dist/suneung.html
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const out = process.argv[2] || join(root, 'dist', 'suneung.html');
 const read = (p) => readFileSync(join(root, p), 'utf8');
 
-// 의존 순서대로
 const modules = ['src/data.js', 'src/game.js', 'src/pixel.js', 'src/card.js', 'src/main.js'];
+const sources = modules.map(read);
 const js = modules
-  .map((p) => `// ---- ${p}\n` + read(p)
+  .map((p, i) => `// ---- ${p}\n` + sources[i]
     .replace(/^import[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, '')
     .replace(/^export\s+(?=(async\s+)?(function|const|let|class)\b)/gm, ''))
   .join('\n');
 
 const html = read('index.html');
 const app = html.slice(html.indexOf('<!-- app:start -->'), html.indexOf('<!-- app:end -->') + '<!-- app:end -->'.length);
-const fonts = html.match(/<link rel="stylesheet" href="https:\/\/fonts\.googleapis\.com[^>]+>/)[0];
+let css = read('style.css');
+
+// 글꼴 서브셋
+const used = new Set([...sources.join('') + html + css]);
+for (let c = 0x20; c < 0x7f; c++) used.add(String.fromCharCode(c));
+'▶·…“”‘’—'.split('').forEach((c) => used.add(c));
+const tmp = mkdtempSync(join(tmpdir(), 'galmuri-'));
+const textFile = join(tmp, 'chars.txt');
+writeFileSync(textFile, [...used].join(''));
+for (const name of ['Galmuri11', 'Galmuri11-Bold']) {
+  const src = join(root, 'fonts', `${name}.woff2`);
+  const dst = join(tmp, `${name}.woff2`);
+  let data;
+  try {
+    execFileSync('pyftsubset', [src, `--text-file=${textFile}`, '--flavor=woff2', `--output-file=${dst}`], { stdio: 'ignore' });
+    data = readFileSync(dst);
+  } catch (e) {
+    console.warn(`서브셋 실패, 전체 글꼴을 넣습니다: ${name}`);
+    data = readFileSync(src);
+  }
+  css = css.replace(`url("fonts/${name}.woff2")`, `url("data:font/woff2;base64,${data.toString('base64')}")`);
+}
 
 const page = `<title>수능 감독관</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-${fonts}
 <style>
-${read('style.css')}
+${css}
 </style>
 ${app}
 <script>
@@ -36,4 +60,4 @@ ${js}
 
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, page);
-console.log(`wrote ${out} (${page.length} bytes)`);
+console.log(`wrote ${out} (${Math.round(page.length / 1024)} KB)`);
