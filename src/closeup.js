@@ -489,16 +489,17 @@ function bodyTemplate(pose, sleeves, waist) {
   return template(`body|${pose}|${sleeves}|${waist}`, (r) => {
     const cloth = SLOT('C');
     const skin = SLOT('K');
-    // 몸통: 목에서 비스듬히 내려오는 어깨, 둥근 어깨 끝, 살짝 좁아지는 허리
+    // 몸통과 위팔을 한 덩어리로: 목에서 완만하게 내려오는 어깨선 → 둥근 어깨 끝 → 곧게 내려오는 팔 바깥선
     const pTorso = r.part(cloth);
     r.fill(pTorso, 30, 56, 130, 99, (x, y) => {
       const ax = Math.abs(x + 0.5 - 80);
-      const shoulderTop = ax <= 9 ? 59 : 59 + (ax - 9) * 0.3;
-      const half = y < 70 ? Math.min(37, 22 + (y - 58) * 1.9) : 37 - Math.max(0, y - 84) * 0.2;
-      return y >= shoulderTop && ax <= half;
+      if (ax > 37) return false;
+      let top;
+      if (ax <= 9) top = 59.5;
+      else if (ax <= 27) top = 59.5 + (ax - 9) * 0.3;
+      else top = 64.9 + (1 - Math.sqrt(Math.max(0, 1 - ((ax - 27) / 10) ** 2))) * 10;
+      return y >= top;
     });
-    r.ellipse(pTorso, 45, 71, 9, 8);
-    r.ellipse(pTorso, 115, 71, 9, 8);
     if (waist) r.ellipse(pTorso, 117, 90, 6, 6);
     // 목, 귀, 머리
     const pNeck = r.part(skin);
@@ -512,11 +513,6 @@ function bodyTemplate(pose, sleeves, waist) {
       const narrow = ny > 0 ? 1 - ny * 0.32 : 1;
       return ((x + 0.5 - 80) / (20.5 * narrow)) ** 2 + ny ** 2 <= 1;
     });
-    // 위팔: 몸통 옆에 붙어 내려온다
-    const pUpperL = r.part(cloth);
-    capsule(r, pUpperL, 43, 72, 41, 92, 7);
-    const pUpperR = r.part(cloth);
-    capsule(r, pUpperR, 117, 72, 119, 92, 7);
     // 책상
     const pDesk = r.part(WOOD.map((_, i) => `W${i}`), { flat: true });
     r.rect(pDesk, 0, 96, CLOSE_W, 24);
@@ -531,7 +527,7 @@ function bodyTemplate(pose, sleeves, waist) {
     }
     if (pose === 'belly') {
       const pFore = r.part(sleeves ? skin : cloth);
-      capsule(r, pFore, 42, 91, 62, 87, 5.5);
+      capsule(r, pFore, 49, 92, 62, 88, 5);
       const pHand = r.part(skin, { shine: true });
       r.ellipse(pHand, 67, 86, 6, 4.5);
     }
@@ -548,15 +544,15 @@ function armsTemplate(pose, sleeves) {
     const rightHand = pose === 'penUp' ? [107, 99] : [97, 105];
     if (left) {
       const pFore = r.part(sleeves ? skin : cloth);
-      capsule(r, pFore, 42, 95, 57, 103, 5.5);
-      if (sleeves) { const pCuff = r.part(cloth); r.ellipse(pCuff, 42, 94, 6.5, 4); }
+      capsule(r, pFore, 48, 96, 58, 103, 5);
+      if (sleeves) { const pCuff = r.part(cloth); r.ellipse(pCuff, 48, 95, 6, 3.5); }
       const pHand = r.part(skin, { shine: true });
       r.ellipse(pHand, 63, 105, 6.5, 4.5);
     }
     if (right) {
       const pFore = r.part(sleeves ? skin : cloth);
-      capsule(r, pFore, 118, 95, rightHand[0] + 6, rightHand[1] - 2, 5.5);
-      if (sleeves) { const pCuff = r.part(cloth); r.ellipse(pCuff, 118, 94, 6.5, 4); }
+      capsule(r, pFore, 112, 96, rightHand[0] + 5, rightHand[1] - 2, 5);
+      if (sleeves) { const pCuff = r.part(cloth); r.ellipse(pCuff, 112, 95, 6, 3.5); }
       const pHand = r.part(skin, { shine: true });
       r.ellipse(pHand, rightHand[0], rightHand[1], 6.5, 4.5);
     }
@@ -597,6 +593,10 @@ export function drawCloseup(ctx, v) {
   paint(ctx, hairTemplate(look.hairStyle, true), colors);
   paint(ctx, bodyTemplate(pose, !!v.sleeves, !!v.waist), colors);
   paint(ctx, hairTemplate(look.hairStyle, false), colors);
+  // 팔과 몸통 사이 주름(겨드랑이에서 팔꿈치까지)
+  const crease = (x0, x1) => { line(ctx, x0, 77, x1, 95, cloth[1]); line(ctx, x0 + (x1 > x0 ? 1 : -1), 79, x1 + (x1 > x0 ? 1 : -1), 95, cloth[3]); };
+  if (pose !== 'belly') crease(55, 54);
+  if (pose !== 'glasses' && pose !== 'ear') crease(105, 106);
 
   // 책상 가장자리
   px(ctx, 0, 96, CLOSE_W, 1, WOOD[0]);
