@@ -32,19 +32,29 @@ test('같은 시험실 번호면 같은 판이 나온다', () => {
   assert.notDeepEqual(newGame(4271).students, newGame(4272).students);
 });
 
-test('판 구성: 계획형 0~1명, 실수형 2~3명, 겹치지 않음', () => {
-  let schemeGames = 0;
+test('판 구성: 계획형 1~2명, 실수형 0~1명, 겹치지 않음', () => {
+  let two = 0;
+  const kinds = new Set();
   for (const room of ROOMS) {
     const s = newGame(room);
     const schemes = s.students.filter((x) => x.scheme);
     const slips = s.students.filter((x) => x.slip);
-    assert.ok(schemes.length <= 1);
-    assert.ok(slips.length >= 2 && slips.length <= 3);
+    assert.ok(schemes.length >= 1 && schemes.length <= 2);
+    assert.ok(slips.length <= 1);
     s.students.forEach((x) => assert.ok(!(x.scheme && x.slip)));
-    schemes.forEach((x) => { if (SCHEMES[x.scheme].needsGlasses) assert.ok(x.look.glasses); });
-    if (schemes.length) schemeGames += 1;
+    schemes.forEach((x) => { kinds.add(x.scheme); if (SCHEMES[x.scheme].needsGlasses) assert.ok(x.look.glasses); });
+    if (schemes.length === 2) two += 1;
   }
-  assert.ok(schemeGames > ROOMS.length * 0.5 && schemeGames < ROOMS.length * 0.8, `계획형 비율 ${schemeGames}`);
+  assert.equal(kinds.size, Object.keys(SCHEMES).length, '모든 계획형이 등장');
+  assert.ok(two > ROOMS.length * 0.3 && two < ROOMS.length * 0.6, `2명 비율 ${two}`);
+});
+
+test('모든 계획형은 앞에서 보이는 징후나 순회 징후가 있다', () => {
+  for (const [k, v] of Object.entries(SCHEMES)) {
+    assert.ok(v.patrol.length >= 1, k);
+    assert.ok(v.found && v.reveal && v.calm.length, k);
+    assert.ok(v.detect > 0 && v.detect <= 1, k);
+  }
 });
 
 test('입실 점검은 30분을 넘지 않고 08:25 재난문자는 한 번만', () => {

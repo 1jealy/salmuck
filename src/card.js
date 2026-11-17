@@ -38,8 +38,8 @@ export function renderCard(state) {
   scene.width = SCENE_W;
   scene.height = SCENE_H;
   drawScene(scene.getContext('2d'), state, { reduceMotion: true });
-  const sw = SCENE_W * 4;
-  const sh = SCENE_H * 4;
+  const sw = SCENE_W * 3;
+  const sh = SCENE_H * 3;
   const sx = (W - sw) / 2;
   box(ctx, sx, 60, sw, sh);
   ctx.imageSmoothingEnabled = false;
@@ -47,27 +47,26 @@ export function renderCard(state) {
 
   // 등급 상자
   const by = 60 + sh + 48;
-  box(ctx, sx, by, sw, H - by - 60);
+  const tx = 60;
+  box(ctx, tx, by, W - 120, H - by - 60);
   let y = by + 36;
-  text(ctx, `수능 감독관 · 시험실 ${state.room}`, sx + 40, y, 33, K.dim);
+  text(ctx, `수능 감독관 · 시험실 ${state.room}`, tx + 40, y, 33, K.dim);
   y += 64;
   const g = String(r.grade);
-  text(ctx, g, sx + 44, y + 6, 132, K.shadow, 700);
-  const gw = text(ctx, g, sx + 40, y, 132, K.yellow, 700);
-  text(ctx, '등급', sx + 56 + gw, y + 70, 55, K.text, 700);
+  text(ctx, g, tx + 44, y + 6, 132, K.shadow, 700);
+  const gw = text(ctx, g, tx + 40, y, 132, K.yellow, 700);
+  text(ctx, '등급', tx + 56 + gw, y + 70, 55, K.text, 700);
   y += 160;
-  text(ctx, r.title, sx + 40, y, 44, K.yellow, 700);
+  text(ctx, r.title, tx + 40, y, 44, K.yellow, 700);
   y += 76;
 
-  let line;
-  if (r.scheme) {
-    const name = SCHEMES[r.scheme.key].name;
-    line = r.scheme.state === 'caught' ? `${name} 적발` : r.scheme.state === 'flagged' ? `${name} 사후 조사로 적발` : `${name}를 놓쳤다`;
-    text(ctx, line, sx + 40, y, 36, r.scheme.state === 'missed' ? K.red : K.green);
-  } else {
-    text(ctx, '계획형 부정행위자 없음', sx + 40, y, 36, K.green);
-  }
-  y += 58;
-  text(ctx, `예방 ${r.prevented} · 처리 ${r.reported} · 봐줌 ${r.excused} · 놓침 ${r.missedSlip} · 민원 ${r.complaints}`, sx + 40, y, 30, K.dim);
+  r.schemes.forEach((sc) => {
+    const name = SCHEMES[sc.key].name;
+    const line = sc.state === 'caught' ? `${sc.seat}번 ${name} 적발` : sc.state === 'flagged' ? `${sc.seat}번 ${name} 사후 조사` : `${sc.seat}번 ${name} 놓침`;
+    text(ctx, line, tx + 40, y, 34, sc.state === 'missed' ? K.red : K.green);
+    y += 50;
+  });
+  y += 8;
+  text(ctx, `예방 ${r.prevented} · 처리 ${r.reported} · 봐줌 ${r.excused} · 놓침 ${r.missedSlip} · 민원 ${r.complaints}`, tx + 40, y, 30, K.dim);
   return canvas;
 }
