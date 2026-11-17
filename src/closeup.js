@@ -103,8 +103,8 @@ function makeRaster(w, h) {
             const hi = part.shine && !inside(x - 2, y - 1) && inside(x + 1, y + 1);
             c = shadow ? ramp[1] : hi ? ramp[4] : lit ? ramp[3] : ramp[2];
           }
-          ctx.fillStyle = c;
-          ctx.fillRect(x, y, 1, 1);
+          if (typeof ctx === 'function') ctx(x, y, c);
+          else { ctx.fillStyle = c; ctx.fillRect(x, y, 1, 1); }
         }
       }
     },
@@ -452,6 +452,135 @@ function pocketsInset(ctx, items) {
   });
 }
 
+// ---------- 공용 틀 (모든 학생이 같은 틀을 쓰고 색만 바꾼다) ----------
+// 틀의 각 칸에는 실제 색 대신 'C0'~'C4'(옷), 'K0'~'K4'(피부), 'H0'~'H4'(머리), 'W0'~'W4'(책상) 같은 자리표시가 들어간다.
+const SLOT = (k) => [0, 1, 2, 3, 4].map((i) => `${k}${i}`);
+const TEMPLATE_CACHE = new Map();
+
+function capsule(r, p, x0, y0, x1, y1, rad) {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const len2 = dx * dx + dy * dy;
+  r.fill(p, Math.floor(Math.min(x0, x1) - rad), Math.floor(Math.min(y0, y1) - rad), Math.ceil(Math.max(x0, x1) + rad), Math.ceil(Math.max(y0, y1) + rad), (x, y) => {
+    const t = Math.max(0, Math.min(1, ((x + 0.5 - x0) * dx + (y + 0.5 - y0) * dy) / len2));
+    const ex = x + 0.5 - (x0 + dx * t);
+    const ey = y + 0.5 - (y0 + dy * t);
+    return ex * ex + ey * ey <= rad * rad;
+  });
+}
+
+function toMap(r) {
+  const map = new Array(CLOSE_W * CLOSE_H).fill(null);
+  r.render((x, y, c) => { map[y * CLOSE_W + x] = c; });
+  return map;
+}
+
+function template(key, build) {
+  if (!TEMPLATE_CACHE.has(key)) {
+    const r = makeRaster(CLOSE_W, CLOSE_H);
+    build(r);
+    TEMPLATE_CACHE.set(key, toMap(r));
+  }
+  return TEMPLATE_CACHE.get(key);
+}
+
+// 몸 뒤쪽 층: 몸통, 목, 귀, 머리, 위팔, 책상, 자세에 따라 든 팔
+function bodyTemplate(pose, sleeves, waist) {
+  return template(`body|${pose}|${sleeves}|${waist}`, (r) => {
+    const cloth = SLOT('C');
+    const skin = SLOT('K');
+    // 몸통: 목에서 비스듬히 내려오는 어깨, 둥근 어깨 끝, 살짝 좁아지는 허리
+    const pTorso = r.part(cloth);
+    r.fill(pTorso, 30, 56, 130, 99, (x, y) => {
+      const ax = Math.abs(x + 0.5 - 80);
+      const shoulderTop = ax <= 9 ? 59 : 59 + (ax - 9) * 0.3;
+      const half = y < 70 ? Math.min(37, 22 + (y - 58) * 1.9) : 37 - Math.max(0, y - 84) * 0.2;
+      return y >= shoulderTop && ax <= half;
+    });
+    r.ellipse(pTorso, 45, 71, 9, 8);
+    r.ellipse(pTorso, 115, 71, 9, 8);
+    if (waist) r.ellipse(pTorso, 117, 90, 6, 6);
+    // 목, 귀, 머리
+    const pNeck = r.part(skin);
+    r.round(pNeck, 72, 50, 16, 14, 3);
+    const pEars = r.part(skin);
+    r.ellipse(pEars, 59, 37, 4.5, 7.5);
+    r.ellipse(pEars, 101, 37, 4.5, 7.5);
+    const pHead = r.part(skin, { shine: true });
+    r.fill(pHead, 58, 10, 102, 58, (x, y) => {
+      const ny = (y + 0.5 - 33) / 23;
+      const narrow = ny > 0 ? 1 - ny * 0.32 : 1;
+      return ((x + 0.5 - 80) / (20.5 * narrow)) ** 2 + ny ** 2 <= 1;
+    });
+    // 위팔: 몸통 옆에 붙어 내려온다
+    const pUpperL = r.part(cloth);
+    capsule(r, pUpperL, 43, 72, 41, 92, 7);
+    const pUpperR = r.part(cloth);
+    capsule(r, pUpperR, 117, 72, 119, 92, 7);
+    // 책상
+    const pDesk = r.part(WOOD.map((_, i) => `W${i}`), { flat: true });
+    r.rect(pDesk, 0, 96, CLOSE_W, 24);
+    // 자세에 따라 책상 위가 아닌 곳으로 간 팔
+    if (pose === 'glasses' || pose === 'ear') {
+      const hx = pose === 'glasses' ? 100 : 104;
+      const hy = pose === 'glasses' ? 33 : 38;
+      const pFore = r.part(sleeves ? skin : cloth);
+      capsule(r, pFore, 119, 90, hx + 5, hy + 8, 5.5);
+      const pHand = r.part(skin, { shine: true });
+      r.ellipse(pHand, hx + 2, hy + 1, 5.5, 5);
+    }
+    if (pose === 'belly') {
+      const pFore = r.part(sleeves ? skin : cloth);
+      capsule(r, pFore, 42, 91, 62, 87, 5.5);
+      const pHand = r.part(skin, { shine: true });
+      r.ellipse(pHand, 67, 86, 6, 4.5);
+    }
+  });
+}
+
+// 몸 앞쪽 층: 책상 위에 앞으로 내민 아래팔과 손 (책상 물건 위에 그린다)
+function armsTemplate(pose, sleeves) {
+  return template(`arms|${pose}|${sleeves}`, (r) => {
+    const cloth = SLOT('C');
+    const skin = SLOT('K');
+    const left = pose !== 'belly';
+    const right = pose !== 'glasses' && pose !== 'ear';
+    const rightHand = pose === 'penUp' ? [107, 99] : [97, 105];
+    if (left) {
+      const pFore = r.part(sleeves ? skin : cloth);
+      capsule(r, pFore, 42, 95, 57, 103, 5.5);
+      if (sleeves) { const pCuff = r.part(cloth); r.ellipse(pCuff, 42, 94, 6.5, 4); }
+      const pHand = r.part(skin, { shine: true });
+      r.ellipse(pHand, 63, 105, 6.5, 4.5);
+    }
+    if (right) {
+      const pFore = r.part(sleeves ? skin : cloth);
+      capsule(r, pFore, 118, 95, rightHand[0] + 6, rightHand[1] - 2, 5.5);
+      if (sleeves) { const pCuff = r.part(cloth); r.ellipse(pCuff, 118, 94, 6.5, 4); }
+      const pHand = r.part(skin, { shine: true });
+      r.ellipse(pHand, rightHand[0], rightHand[1], 6.5, 4.5);
+    }
+  });
+}
+
+function hairTemplate(style, back) {
+  return template(`hair|${style}|${back}`, (r) => {
+    const p = r.part(SLOT('H'), { shine: !back });
+    if (back) hairBack(r, p, style);
+    else hairFront(r, p, style);
+  });
+}
+
+function paint(ctx, map, colors) {
+  for (let i = 0; i < map.length; i++) {
+    const tok = map[i];
+    if (!tok) continue;
+    const ramp = colors[tok[0]];
+    ctx.fillStyle = ramp[+tok[1]];
+    ctx.fillRect(i % CLOSE_W, Math.floor(i / CLOSE_W), 1, 1);
+  }
+}
+
 // ---------- 전체 ----------
 export function drawCloseup(ctx, v) {
   ctx.imageSmoothingEnabled = false;
@@ -461,70 +590,14 @@ export function drawCloseup(ctx, v) {
   const clothIndex = LOOKS.clothes.findIndex((c) => c.body === look.clothes.body);
   const cloth = CLOTHES[clothIndex >= 0 ? clothIndex : 0];
   const cl = look.clothes;
+  const pose = v.pose;
+  const colors = { C: cloth, K: skin, H: hair, W: WOOD };
 
   background(ctx);
-  const r = makeRaster(CLOSE_W, CLOSE_H);
+  paint(ctx, hairTemplate(look.hairStyle, true), colors);
+  paint(ctx, bodyTemplate(pose, !!v.sleeves, !!v.waist), colors);
+  paint(ctx, hairTemplate(look.hairStyle, false), colors);
 
-  // 뒷머리
-  const pHairBack = r.part(hair);
-  hairBack(r, pHairBack, look.hairStyle);
-  // 몸통 (어깨선이 둥글게 퍼진다)
-  const pTorso = r.part(cloth);
-  r.fill(pTorso, 30, 60, 130, 99, (x, y) => {
-    const half = 15 + Math.min(27, (y - 60) * 2.4);
-    const top = y >= 60 + Math.max(0, Math.abs(x - 80) - 28) * 0.18;
-    return Math.abs(x + 0.5 - 80) <= half && top;
-  });
-  if (v.waist) r.ellipse(pTorso, 120, 90, 6, 6);
-  // 목
-  const pNeck = r.part(skin);
-  r.round(pNeck, 72, 52, 16, 14, 3);
-  // 귀
-  const pEars = r.part(skin);
-  r.ellipse(pEars, 59, 37, 4.5, 7.5);
-  r.ellipse(pEars, 101, 37, 4.5, 7.5);
-  // 머리 (턱이 좁아지는 계란형)
-  const pHead = r.part(skin, { shine: true });
-  r.fill(pHead, 58, 10, 102, 58, (x, y) => {
-    const ny = (y + 0.5 - 33) / 23;
-    const narrow = ny > 0 ? 1 - ny * 0.32 : 1;
-    return ((x + 0.5 - 80) / (20.5 * narrow)) ** 2 + ny ** 2 <= 1;
-  });
-  // 앞머리
-  const pHair = r.part(hair, { shine: true });
-  hairFront(r, pHair, look.hairStyle);
-  // 책상
-  const pDesk = r.part(WOOD, { flat: true });
-  r.rect(pDesk, 0, 96, CLOSE_W, 24);
-  // 팔
-  const pose = v.pose;
-  const pArmL = r.part(cloth);
-  r.round(pArmL, 29, 68, 15, 34, 5);
-  const pSkinL = r.part(skin);
-  if (v.sleeves) r.round(pSkinL, 30, 84, 13, 16, 4);
-  r.ellipse(pSkinL, 37, 100, 7, 4.5);
-  const pArmR = r.part(cloth);
-  const pSkinR = r.part(skin, { shine: true });
-  if (pose === 'glasses' || pose === 'ear') {
-    const hx = pose === 'glasses' ? 98 : 104;
-    const hy = pose === 'glasses' ? 33 : 38;
-    r.round(pArmR, 112, 52, 14, 50, 6);
-    r.fill(pArmR, hx, hy, 126, 60, (x, y) => Math.abs(x - (hx + 6 + (y - hy) * 0.35)) <= 6);
-    r.ellipse(pSkinR, hx + 3, hy, 6, 5.5);
-  } else if (pose === 'belly') {
-    r.round(pArmR, 116, 68, 15, 34, 5);
-    r.ellipse(pSkinR, 122, 100, 7, 4.5);
-    r.round(pArmL, 40, 82, 26, 10, 4);
-    r.ellipse(pSkinL, 68, 87, 6, 5);
-  } else {
-    r.round(pArmR, 116, 68, 15, 34, 5);
-    if (v.sleeves) r.round(pSkinR, 117, 84, 13, 16, 4);
-    r.ellipse(pSkinR, 123, 100, 7, 4.5);
-  }
-  r.render(ctx);
-
-  // 소매 끝
-  if (v.sleeves) { px(ctx, 29, 83, 15, 2, cloth[1]); if (pose !== 'glasses' && pose !== 'ear' && pose !== 'belly') px(ctx, 116, 83, 15, 2, cloth[1]); }
   // 책상 가장자리
   px(ctx, 0, 96, CLOSE_W, 1, WOOD[0]);
   px(ctx, 0, 97, CLOSE_W, 1, WOOD[3]);
@@ -540,27 +613,29 @@ export function drawCloseup(ctx, v) {
   if (v.pocketBulge) {
     const w = v.pocketBulge === 'phone' ? 10 : 7;
     const h = v.pocketBulge === 'phone' ? 13 : 6;
-    px(ctx, 47, 82, w, h, cloth[1]);
-    px(ctx, 47, 82, w, 1, cloth[3]);
-    px(ctx, 47, 82, 1, h, cloth[3]);
+    px(ctx, 53, 81, w, h, cloth[1]);
+    px(ctx, 53, 81, w, 1, cloth[3]);
+    px(ctx, 53, 81, 1, h, cloth[3]);
   }
-  if (v.buzz) stamp(ctx, 126, 84, ['.y.y', 'y.y.', '....', '.y.y', 'y.y.'], { y: C.buzz });
+  if (v.buzz) stamp(ctx, 124, 84, ['.y.y', 'y.y.', '....', '.y.y', 'y.y.'], { y: C.buzz });
   buttons(ctx, v);
   face(ctx, v, skin, hair);
   if (v.glasses && !v.glasses.off) glassesOnFace(ctx, v.glasses);
 
   desk(ctx, v);
-  // 손을 책상 물건 위로 다시 (손이 종이를 누르는 느낌)
-  const hand = ['.oooooooo.', 'ollllllmmo', 'olmlmlmlmo', '.oooooooo.'];
-  const handCol = { o: skin[0], l: skin[3], m: skin[2] };
-  if (pose !== 'belly') stamp(ctx, 32, 97, hand, handCol);
-  if (pose === 'desk' || pose === 'tap' || pose === 'belly') stamp(ctx, 118, 97, hand, handCol);
-  if (v.watch) watch(ctx, v.watch, 31, 86);
-  if (v.paper !== 'none') {
-    if (pose === 'penUp') pen(ctx, v.fakePen, 118, 76, true);
-    else pen(ctx, v.fakePen, 88, 113, false);
+  paint(ctx, armsTemplate(pose, !!v.sleeves), colors);
+  if (pose !== 'belly') {
+    // 손가락 사이 선
+    [60, 63, 66].forEach((x) => px(ctx, x, 106, 1, 2, skin[1]));
   }
-  if (pose === 'tap') stamp(ctx, 116, 91, ['k..k', '.k..', 'k..k'], { k: C.ink });
+  if (pose === 'desk' || pose === 'tap') [94, 97, 100].forEach((x) => px(ctx, x, 106, 1, 2, skin[1]));
+  if (v.watch && pose !== 'belly') watch(ctx, v.watch, 49, 96);
+  else if (v.watch) watch(ctx, v.watch, 52, 83);
+  if (v.paper !== 'none') {
+    if (pose === 'penUp') pen(ctx, v.fakePen, 106, 79, true);
+    else pen(ctx, v.fakePen, 74, 113, false);
+  }
+  if (pose === 'tap') stamp(ctx, 95, 97, ['k..k', '.k..', 'k..k'], { k: C.ink });
 
   if (v.idPhoto) idInset(ctx, v, skin, hair, cloth);
   if (v.glasses && v.glasses.off) glassesInset(ctx, v.glasses);
