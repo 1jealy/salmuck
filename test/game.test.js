@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { newGame, precheck, finishPrecheck, idCheck, finishIdCheck, patrol, endExam, afterCheck, nextPeriod, resolvePending, toggleFlag, submitReport, normalizeRoom, truth, student } from '../src/game.js';
+import { newGame, precheck, finishPrecheck, idCheck, patrol, endExam, afterCheck, nextPeriod, resolvePending, toggleFlag, submitReport, normalizeRoom, truth, student } from '../src/game.js';
 import { SLIPS, SCHEMES } from '../src/data.js';
 
 const ROOMS = Array.from({ length: 500 }, (_, i) => 1000 + i * 17);
@@ -14,17 +14,20 @@ function playThrough(state, pick = (n) => n % 12 + 1) {
   finishPrecheck(state);
   settle();
   for (let p = 0; p < 4; p++) {
-    if (state.phase === 'idcheck') { for (let i = 0; i < 3; i++) { idCheck(state, pick(k++)); settle(); } finishIdCheck(state); }
+    for (let i = 0; i < 3; i++) { idCheck(state, pick(k++)); settle(); }
     for (let i = 0; i < 3; i++) { patrol(state, pick(k++)); settle(); }
+    if (p % 2 === 0) toggleFlag(state, pick(k++));
     endExam(state);
     settle();
-    assert.equal(state.phase, 'break');
-    afterCheck(state, pick(k++));
-    settle();
-    nextPeriod(state);
+    if (state.phase === 'break') {
+      afterCheck(state, state.students.find((x) => x.flagged && x.schemeState !== 'caught' && x.slipState !== 'reported').seat);
+      settle();
+      nextPeriod(state);
+    }
   }
-  assert.equal(state.phase, 'report');
-  return submitReport(state);
+  if (state.phase === 'report') submitReport(state);
+  assert.equal(state.phase, 'result');
+  return state.result;
 }
 
 test('같은 시험실 번호면 같은 판이 나온다', () => {
@@ -79,6 +82,7 @@ test('스마트안경은 점심 전 점검에서는 깨끗하고 오후에는 �
   const early = newGame(room);
   const seat = early.students.find((x) => x.scheme === 'aiGlasses').seat;
   finishPrecheck(early);
+  toggleFlag(early, seat);
   endExam(early);
   while (early.pending) resolvePending(early, 'report');
   afterCheck(early, seat);
@@ -87,11 +91,11 @@ test('스마트안경은 점심 전 점검에서는 깨끗하고 오후에는 �
   const late = newGame(room);
   finishPrecheck(late);
   for (let p = 0; p < 3; p++) {
-    if (late.phase === 'idcheck') finishIdCheck(late);
+    if (p === 2) toggleFlag(late, seat);
     endExam(late);
     while (late.pending) resolvePending(late, 'report');
-    if (p < 2) nextPeriod(late);
   }
+  assert.equal(late.phase, 'break');
   afterCheck(late, seat);
   assert.equal(student(late, seat).schemeState, 'caught');
 });
@@ -117,12 +121,25 @@ test('무고한 수험생 교시 후 점검은 민원 1건, 의심 표시는 감
   const room = ROOMS.find((r) => newGame(r).students[0].slip == null && newGame(r).students[0].scheme == null);
   const s = newGame(room);
   finishPrecheck(s);
+  toggleFlag(s, 1);
   endExam(s);
   while (s.pending) resolvePending(s, 'report');
+  assert.equal(s.phase, 'break');
   afterCheck(s, 1);
   assert.equal(s.complaints, 1);
-  toggleFlag(s, 1);
-  assert.ok(student(s, 1).flagged);
+});
+
+test('의심 표시가 없으면 쉬는 시간 단계 없이 바로 다음 교시로 간다', () => {
+  const room = ROOMS.find((r) => !newGame(r).students.some((x) => x.slip === 'bell' || x.slip === 'section4'));
+  const s = newGame(room);
+  finishPrecheck(s);
+  for (let p = 0; p < 3; p++) {
+    endExam(s);
+    assert.equal(s.phase, 'exam');
+    assert.equal(s.period, p + 1);
+  }
+  endExam(s);
+  assert.equal(s.phase, 'result');
 });
 
 test('실수형 데이터 형식', () => {

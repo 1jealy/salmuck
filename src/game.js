@@ -58,7 +58,6 @@ export function clock(state) {
   const p = PERIODS[state.period];
   switch (state.phase) {
     case 'precheck': return addMin(PRECHECK.start, state.minutes);
-    case 'idcheck': return addMin(p.start, -10 + (BUDGET.idCheck - state.idLeft) * 2);
     case 'exam': return addMin(p.start, (BUDGET.patrol - state.patrolLeft) * 20 + 5);
     case 'ending':
     case 'bell':
@@ -321,7 +320,8 @@ function startExam(state) {
   const p = PERIODS[state.period];
   state.phase = 'exam';
   state.patrolLeft = BUDGET.patrol;
-  log(state, 'period', `${p.label} ${p.subject} 시작`);
+  state.idLeft = state.period > 0 ? BUDGET.idCheck : 0;
+  log(state, 'period', `${p.label} ${p.subject} 시작${state.period === 2 ? ' · 휴대 물품 재점검 날' : ''}`);
   state.schedule[state.period].forEach((ev) => {
     log(state, ev.kind === 'ambient' ? 'ambient' : 'event', ev.text, ev.seat);
     if (ev.kind === 'sticker') {
@@ -332,7 +332,7 @@ function startExam(state) {
 }
 
 export function canIdCheck(state, seat) {
-  return state.phase === 'idcheck' && !busy(state) && state.idLeft > 0 && !!student(state, seat);
+  return state.phase === 'exam' && !busy(state) && state.idLeft > 0 && !!student(state, seat);
 }
 
 export function idCheck(state, seat) {
@@ -364,12 +364,6 @@ export function idCheck(state, seat) {
   if (p <= 2) parts.push(s.scheme && SCHEMES[s.scheme].idcheck ? SCHEMES[s.scheme].idcheck : '소매 안쪽도 이상 없다.');
   log(state, 'check', `본인 확인: ${parts.join(' ')}`, seat);
   return true;
-}
-
-export function finishIdCheck(state) {
-  if (state.phase !== 'idcheck' || busy(state)) return;
-  state.actionIndex += 1;
-  startExam(state);
 }
 
 function schemeActive(s, period) {
@@ -437,10 +431,18 @@ export function continueAfterPending(state) {
 
 function toBreak(state) {
   const p = PERIODS[state.period];
-  state.phase = 'break';
   state.afterLeft = BUDGET.afterCheck;
+  state.phase = 'break'; // 종료 시각으로 기록
   log(state, 'system', `${p.label} 종료. 답안지를 걷었다.${state.period === 1 ? ' 이제 점심시간이다.' : ''}`);
   state.students.forEach((s) => { if (s.mood === 'nervous') s.mood = 'normal'; });
+  // 의심 표시한 수험생이 있을 때만 쉬는 시간 점검 단계를 연다.
+  if (suspects(state).length) state.phase = 'break';
+  else advance(state);
+}
+
+// 의심 표시했고 아직 처리되지 않은 수험생
+export function suspects(state) {
+  return state.students.filter((s) => s.flagged && s.schemeState !== 'caught' && s.slipState !== 'reported');
 }
 
 export function canAfterCheck(state, seat) {
@@ -481,15 +483,20 @@ export function afterCheck(state, seat) {
 
 export function nextPeriod(state) {
   if (state.phase !== 'break' || busy(state)) return;
+  advance(state);
+}
+
+function advance(state) {
   state.actionIndex += 1;
   if (state.period < PERIODS.length - 1) {
     state.period += 1;
-    state.phase = 'idcheck';
-    state.idLeft = BUDGET.idCheck;
-    log(state, 'period', `${PERIODS[state.period].label} 본인 확인 시간${state.period === 2 ? ' · 휴대 물품 재점검 포함' : ''}`);
+    startExam(state);
+  } else if (suspects(state).length) {
+    state.phase = 'report';
+    log(state, 'system', '모든 시험이 끝났다. 의심 표시한 수험생은 증거가 없어도 사후 조사를 요청할 수 있다.');
   } else {
     state.phase = 'report';
-    log(state, 'system', '모든 시험이 끝났다. 감독 보고서를 쓴다. 증거는 없지만 의심되는 수험생은 사후 조사를 요청할 수 있다.');
+    submitReport(state);
   }
 }
 

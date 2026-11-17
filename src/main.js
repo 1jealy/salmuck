@@ -1,6 +1,6 @@
 // 화면 연결
 import { PERIODS, PRECHECK } from './data.js';
-import { newGame, precheck, canPrecheck, finishPrecheck, idCheck, canIdCheck, finishIdCheck, patrol, canPatrol, endExam, afterCheck, canAfterCheck, nextPeriod, resolvePending, toggleFlag, submitReport, truth, outcome, student, label, clockText, normalizeRoom, randomRoom } from './game.js';
+import { newGame, precheck, canPrecheck, finishPrecheck, idCheck, canIdCheck, suspects, patrol, canPatrol, endExam, afterCheck, canAfterCheck, nextPeriod, resolvePending, toggleFlag, submitReport, truth, outcome, student, label, clockText, normalizeRoom, randomRoom } from './game.js';
 import { drawScene, seatAt, SCENE_W, SCENE_H } from './pixel.js';
 import { renderCard } from './card.js';
 
@@ -42,7 +42,6 @@ function phaseName() {
   const p = PERIODS[state.period];
   switch (state.phase) {
     case 'precheck': return '입실 점검';
-    case 'idcheck': return `${p.label} 본인 확인`;
     case 'exam': return `${p.label} ${p.subject}`;
     case 'ending': case 'bell': case 'break': return `${p.label} 종료`;
     case 'report': return '감독 보고서';
@@ -53,9 +52,8 @@ function phaseName() {
 function budgetText() {
   switch (state.phase) {
     case 'precheck': return `남은 시간 ${PRECHECK.minutes - state.minutes}분`;
-    case 'idcheck': return `본인 확인 ${state.idLeft}회`;
-    case 'exam': return `순회 ${state.patrolLeft}회`;
-    case 'break': return `교시 후 점검 ${state.afterLeft}회`;
+    case 'exam': return state.period > 0 ? `본인 확인 ${state.idLeft} · 순회 ${state.patrolLeft}` : `순회 ${state.patrolLeft}`;
+    case 'break': return '쉬는 시간';
     default: return '';
   }
 }
@@ -113,9 +111,8 @@ function renderDialog() {
 function hint() {
   switch (state.phase) {
     case 'precheck': return '수험생을 눌러 점검을 시작하세요.';
-    case 'idcheck': return '본인 확인할 수험생을 고르세요.';
-    case 'exam': return '가까이 지나가며 살펴볼 수험생을 고르세요.';
-    case 'break': return '교시 후 점검을 요청할 수험생을 고르거나 다음으로 넘어가세요.';
+    case 'exam': return state.period > 0 ? '본인 확인하거나 가까이 살펴볼 수험생을 고르세요.' : '가까이 살펴볼 수험생을 고르세요. 수상하면 의심 표시를 해 두세요.';
+    case 'break': return '의심 표시한 수험생을 시험본부에서 정밀 점검할 수 있다. 쉬는 시간마다 1명.';
     default: return '';
   }
 }
@@ -153,8 +150,10 @@ function renderMenu() {
     return;
   }
   const s = selected ? student(state, selected) : null;
-  if (s) menuLabel(menu, `${label(s)}${s.look.glasses ? ' · 안경' : ''}`);
-  else menuLabel(menu, '수험생을 고르지 않았다');
+  if (state.phase !== 'break') {
+    if (s) menuLabel(menu, `${label(s)}${s.look.glasses ? ' · 안경' : ''}`);
+    else menuLabel(menu, '수험생을 고르지 않았다');
+  }
 
   const flagItem = () => {
     if (s) item(menu, s.flagged ? '의심 표시 지우기' : '의심 표시하기', () => { toggleFlag(state, s.seat); render(); }, { cost: '무료' });
@@ -172,28 +171,22 @@ function renderMenu() {
     sep(menu);
     item(menu, '전자기기 제출 최종 안내', () => act(() => precheck(state, 'announce')), { cost: state.announced ? '완료' : '1분', disabled: !canPrecheck(state, 'announce') });
     item(menu, '점검 마치고 1교시 시작', () => act(() => finishPrecheck(state)), { cls: 'main' });
-  } else if (state.phase === 'idcheck') {
-    if (s) {
-      item(menu, '본인 확인', () => act(() => idCheck(state, s.seat)), { cost: `${state.idLeft}회 남음`, disabled: !canIdCheck(state, s.seat) });
-      flagItem();
-    }
-    sep(menu);
-    item(menu, '본인 확인 마치고 시험 시작', () => act(() => finishIdCheck(state)), { cls: 'main' });
   } else if (state.phase === 'exam') {
     if (s) {
+      if (state.period > 0) item(menu, '본인 확인 (사진·안경·소매)', () => act(() => idCheck(state, s.seat)), { cost: `${state.idLeft}회 남음`, disabled: !canIdCheck(state, s.seat) });
       item(menu, '가까이 지나가며 보기', () => act(() => patrol(state, s.seat)), { cost: `${state.patrolLeft}회 남음`, disabled: !canPatrol(state, s.seat) });
       flagItem();
     }
     sep(menu);
     item(menu, `${PERIODS[state.period].label} 종료까지 감독`, () => act(() => endExam(state)), { cls: 'main' });
   } else if (state.phase === 'break') {
-    if (s) {
-      item(menu, '시험본부에 교시 후 점검 요청', () => act(() => afterCheck(state, s.seat)), { cost: `${state.afterLeft}회 남음`, disabled: !canAfterCheck(state, s.seat) });
-      flagItem();
-    }
+    menuLabel(menu, '시험본부 정밀 점검 (금속탐지기)');
+    suspects(state).forEach((x) => {
+      item(menu, `${label(x)} 점검`, () => act(() => afterCheck(state, x.seat)), { cost: `${state.afterLeft}회`, disabled: !canAfterCheck(state, x.seat) });
+    });
     sep(menu);
     const last = state.period === PERIODS.length - 1;
-    item(menu, last ? '감독 보고서 쓰기' : `${PERIODS[state.period + 1].label} 본인 확인으로`, () => act(() => nextPeriod(state)), { cls: 'main' });
+    item(menu, last ? '감독 보고서 쓰기' : `${PERIODS[state.period + 1].label}로`, () => act(() => nextPeriod(state)), { cls: 'main' });
   } else if (state.phase === 'report') {
     if (s) flagItem();
     sep(menu);
