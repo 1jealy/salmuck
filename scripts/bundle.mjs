@@ -12,13 +12,28 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const out = process.argv[2] || join(root, 'dist', 'suneung.html');
 const read = (p) => readFileSync(join(root, p), 'utf8');
 
-const modules = ['src/data.js', 'src/game.js', 'src/pixel.js', 'src/card.js', 'src/main.js'];
+const modules = ['src/data.js', 'src/game.js', 'src/closeup.js', 'src/pixel.js', 'src/card.js', 'src/main.js'];
 const sources = modules.map(read);
-const js = modules
-  .map((p, i) => `// ---- ${p}\n` + sources[i]
-    .replace(/^import[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, '')
-    .replace(/^export\s+(?=(async\s+)?(function|const|let|class)\b)/gm, ''))
-  .join('\n');
+const modName = (p) => '__' + p.replace(/^.*\//, '').replace(/\.js$/, '').replace(/\W/g, '_');
+
+// 모듈마다 자기 범위를 갖게 감싸고, import/export를 변수 연결로 바꾼다.
+const js = modules.map((p, i) => {
+  const exported = [];
+  let code = sources[i]
+    .replace(/^import\s*\{([^}]*)\}\s*from\s*['"]\.\/([^'"]+)['"];?\s*$/gm, (_, names, file) => {
+      const list = names.split(',').map((n) => n.trim()).filter(Boolean).map((n) => n.replace(/\s+as\s+/, ': '));
+      return `const { ${list.join(', ')} } = ${modName(file)};`;
+    })
+    .replace(/^export\s*\{([^}]*)\};?\s*$/gm, (_, names) => {
+      names.split(',').map((n) => n.trim()).filter(Boolean).forEach((n) => exported.push(n));
+      return '';
+    })
+    .replace(/^export\s+((?:async\s+)?function\s+(\w+)|const\s+(\w+)|let\s+(\w+)|class\s+(\w+))/gm, (m, decl, f, c, l, k) => {
+      exported.push(f || c || l || k);
+      return decl;
+    });
+  return `// ---- ${p}\nconst ${modName(p)} = (() => {\n${code}\nreturn { ${exported.join(', ')} };\n})();`;
+}).join('\n');
 
 const html = read('index.html');
 const app = html.slice(html.indexOf('<!-- app:start -->'), html.indexOf('<!-- app:end -->') + '<!-- app:end -->'.length);

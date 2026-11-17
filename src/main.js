@@ -1,7 +1,8 @@
 // 화면 연결: 교실 그림 → 확대 그림 → 행동 → 수첩(스냅숏 앨범)
 import { PERIODS, PRECHECK } from './data.js';
 import { newGame, precheck, canPrecheck, finishPrecheck, idCheck, canIdCheck, suspects, patrol, canPatrol, endExam, afterCheck, canAfterCheck, nextPeriod, resolvePending, toggleFlag, submitReport, truth, outcome, student, label, clockText, snapshots, normalizeRoom, randomRoom } from './game.js';
-import { drawScene, drawCloseup, seatAt, SCENE_W, SCENE_H, CLOSE_W, CLOSE_H } from './pixel.js';
+import { drawScene, seatAt, SCENE_W, SCENE_H } from './pixel.js';
+import { drawCloseup, CLOSE_W, CLOSE_H } from './closeup.js';
 import { renderCard } from './card.js';
 
 const $ = (id) => document.getElementById(id);
@@ -99,6 +100,10 @@ function renderViewer() {
   const entry = viewing != null ? state.log[viewing] : null;
   $('v-title').textContent = s ? label(s) : '수험생을 고르세요';
   $('v-time').textContent = entry ? `${entry.time} · ${entry.text}` : s ? '아직 가까이 보지 않았다' : '';
+  // 도트가 고르게 보이도록 정수 배율로 키운다.
+  const cv = $('closeup');
+  const avail = cv.parentElement.clientWidth - 24;
+  if (avail > 0) cv.style.width = `${CLOSE_W * Math.max(1, Math.floor(avail / CLOSE_W))}px`;
   closeCtx.fillStyle = '#000';
   closeCtx.fillRect(0, 0, CLOSE_W, CLOSE_H);
   if (entry && entry.view) drawCloseup(closeCtx, entry.view);

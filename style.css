@@ -218,6 +218,8 @@ input::placeholder { color: #6c737c; font-size: 17px; letter-spacing: 0; }
 #v-title { color: var(--yellow); font-size: 19px; }
 #closeup {
   display: block;
+  margin: 0 auto;
+  max-width: 100%;
   width: 100%;
   aspect-ratio: 160 / 120;
   image-rendering: pixelated;
