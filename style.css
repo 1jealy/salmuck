@@ -211,3 +211,63 @@ input::placeholder { color: #6c737c; font-size: 17px; letter-spacing: 0; }
 }
 .overlay-inner { max-width: 420px; width: 100%; display: flex; flex-direction: column; gap: 10px; }
 .overlay-inner img { width: 100%; height: auto; display: block; image-rendering: pixelated; }
+
+/* 확대 그림 보기 */
+.viewer { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+.viewer-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+#v-title { color: var(--yellow); font-size: 19px; }
+#closeup {
+  display: block;
+  width: 100%;
+  aspect-ratio: 160 / 120;
+  image-rendering: pixelated;
+  background: #000;
+}
+.v-caption { margin: 0; min-height: 1.6em; font-size: 17px; }
+.v-caption.k-found, .v-caption.k-caught { color: var(--red); }
+.v-caption.k-clean { color: var(--orange); }
+.v-caption.k-prevent { color: var(--green); }
+
+/* 행동 버튼 */
+.actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.act {
+  font: inherit;
+  font-size: 17px;
+  min-height: 56px;
+  padding: 8px 10px;
+  background: var(--box);
+  color: var(--text);
+  border: 3px solid var(--line);
+  border-radius: 0;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  text-align: left;
+  line-height: 1.3;
+}
+.act small { color: var(--dim); font-size: 14px; }
+.act:hover:not(:disabled), .act:focus-visible { background: #1f2530; outline: none; border-color: var(--yellow); }
+.act:disabled { color: #5d646e; border-color: #3a414b; cursor: not-allowed; }
+.act.main { grid-column: 1 / -1; color: var(--yellow); align-items: center; }
+.act.danger { color: var(--red); }
+.act.flag[aria-pressed="true"] { color: var(--yellow); border-color: var(--yellow); }
+
+/* 수첩 앨범 */
+.album-box { padding: 10px 12px; }
+.small { margin: 0 0 8px; font-size: 14px; }
+.album { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.shot { flex: 0 0 auto; background: none; border: 2px solid #4a525e; padding: 0; cursor: pointer; color: var(--dim); font: inherit; font-size: 13px; }
+.shot canvas { display: block; width: 104px; height: 78px; image-rendering: pixelated; }
+.shot span { display: block; padding: 2px 4px; text-align: left; }
+.shot[aria-current="true"] { border-color: var(--yellow); color: var(--yellow); }
+.shot:focus-visible { outline: 2px solid var(--yellow); }
+
+/* 이번 교시 */
+.ticker { padding: 10px 12px; }
+.ticker ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 16px; }
+.ticker .t { color: var(--dim); font-size: 14px; margin-right: 8px; }
+
+/* 결과 화면의 증거 그림 */
+.truth canvas { display: block; width: 100%; max-width: 240px; aspect-ratio: 160 / 120; image-rendering: pixelated; margin-top: 6px; border: 2px solid #4a525e; }

@@ -39,18 +39,21 @@
       <span id="hud-budget" class="dim"></span>
       <span id="hud-complaints"></span>
     </div>
-    <canvas id="scene" width="240" height="204" aria-label="시험실. 수험생을 눌러 선택하세요."></canvas>
+    <canvas id="scene" width="240" height="204" aria-label="시험실. 수험생을 눌러 고르세요."></canvas>
     <div id="seat-grid" class="seat-grid" role="group" aria-label="좌석 선택"></div>
-    <div id="dialog" class="box dialog" aria-live="polite"></div>
-    <div id="menu" class="box menu"></div>
-    <div id="notes" class="box notes" hidden>
-      <h2 id="notes-title"></h2>
-      <ol id="notes-list"></ol>
+    <div class="box viewer">
+      <div class="viewer-head"><span id="v-title"></span><span id="v-time" class="dim"></span></div>
+      <canvas id="closeup" width="160" height="120" aria-label="가까이 본 모습"></canvas>
+      <p id="v-caption" class="v-caption"></p>
     </div>
-    <details class="box log">
-      <summary>전체 감독 기록</summary>
-      <ol id="log"></ol>
-    </details>
+    <div id="actions" class="actions"></div>
+    <div id="album-box" class="box album-box" hidden>
+      <p class="dim small">수첩 · 눌러서 다시 보기</p>
+      <div id="album" class="album"></div>
+    </div>
+    <div class="box ticker">
+      <ol id="ticker"></ol>
+    </div>
   </section>
 
   <section id="result" class="screen" hidden>

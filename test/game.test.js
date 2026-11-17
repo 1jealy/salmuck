@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { newGame, precheck, finishPrecheck, idCheck, patrol, endExam, afterCheck, nextPeriod, resolvePending, toggleFlag, submitReport, normalizeRoom, truth, student } from '../src/game.js';
+import { newGame, makeView, makeRng, precheck, finishPrecheck, idCheck, patrol, endExam, afterCheck, nextPeriod, resolvePending, toggleFlag, submitReport, normalizeRoom, truth, student } from '../src/game.js';
 import { SLIPS, SCHEMES } from '../src/data.js';
 
 const ROOMS = Array.from({ length: 500 }, (_, i) => 1000 + i * 17);
@@ -52,12 +52,47 @@ test('판 구성: 계획형 1~2명, 실수형 0~1명, 겹치지 않음', () => {
   assert.ok(two > ROOMS.length * 0.3 && two < ROOMS.length * 0.6, `2명 비율 ${two}`);
 });
 
-test('모든 계획형은 앞에서 보이는 징후나 순회 징후가 있다', () => {
+test('모든 계획형은 그림 단서가 있고 정답 설명이 있다', () => {
   for (const [k, v] of Object.entries(SCHEMES)) {
-    assert.ok(v.patrol.length >= 1, k);
     assert.ok(v.found && v.reveal && v.calm.length, k);
     assert.ok(v.detect > 0 && v.detect <= 1, k);
   }
+});
+
+test('확대 그림 단서: 계획형은 장비를 쓰는 동안 그림에 흔적이 남는다', () => {
+  const seen = {};
+  for (const room of ROOMS.slice(0, 300)) {
+    const s = newGame(room);
+    finishPrecheck(s);
+    for (let p = 0; p < 4; p++) {
+      s.students.filter((x) => x.scheme).forEach((x) => {
+        for (let i = 0; i < 5; i++) {
+          const v = makeView(s, x, makeRng(room * 31 + p * 7 + i));
+          const k = x.scheme;
+          seen[k] = seen[k] || false;
+          if (k === 'aiGlasses' && v.glasses.thick) seen[k] = true;
+          if (k === 'buttonCam' && v.bigButton) seen[k] = true;
+          if (k === 'penCam' && v.fakePen) seen[k] = true;
+          if (k === 'earpiece' && v.earBlob) seen[k] = true;
+          if (k === 'vibration' && (v.waist || v.buzz)) seen[k] = true;
+          if (k === 'hybridWatch' && v.watch && (v.watch.h !== v.time[0] % 24 || v.watch.m !== v.time[1])) seen[k] = true;
+          if (k === 'proxy') seen[k] = makeView(s, x, makeRng(1), { id: true }).idPhoto.mole && !v.faceMole;
+        }
+      });
+      if (p < 3) { endExam(s); while (s.pending) resolvePending(s, 'report'); if (s.phase === 'break') nextPeriod(s); }
+    }
+  }
+  for (const k of Object.keys(SCHEMES)) assert.equal(seen[k], true, k);
+});
+
+test('오전의 스마트안경은 평범한 안경으로 그려진다', () => {
+  const room = ROOMS.find((r) => newGame(r).students.some((x) => x.scheme === 'aiGlasses'));
+  const s = newGame(room);
+  const x = s.students.find((y) => y.scheme === 'aiGlasses');
+  precheck(s, 'glasses', x.seat);
+  const v = s.log[s.log.length - 1].view;
+  assert.equal(v.glasses.thick, false);
+  assert.equal(v.glasses.off, true);
 });
 
 test('입실 점검은 30분을 넘지 않고 08:25 재난문자는 한 번만', () => {
