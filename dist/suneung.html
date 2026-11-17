@@ -1,0 +1,1674 @@
+<title>수능 감독관</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans+KR:wght@400;500;700&family=Nanum+Myeongjo:wght@700;800&display=swap">
+<style>
+/* 레이아웃: 칠판색 바탕 위에 시험지 종이 한 장. 한 줄 세로 흐름, 폭 최대 560px.
+   OMR 카드의 분홍 칸과 마킹 동그라미를 UI 요소로 쓴다. 일부러 한 가지 색 세계만 쓴다. */
+:root {
+  --board: #1f332c;
+  --board-2: #29433a;
+  --chalk: #e6ece3;
+  --chalk-dim: #9fb4a6;
+  --paper: #eef0ea;
+  --paper-2: #e2e6de;
+  --ink: #1b1f1d;
+  --ink-soft: #55615a;
+  --omr: #d23a5c;
+  --omr-soft: #f3d3db;
+  --ok: #2f8f57;
+  --font-display: "Nanum Myeongjo", "Noto Serif KR", "AppleMyungjo", serif;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: dark;
+}
+
+html, body { height: auto; }
+body {
+  margin: 0;
+  background: var(--board);
+  color: var(--chalk);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+
+[hidden] { display: none !important; }
+
+.app { max-width: 560px; margin: 0 auto; }
+
+.screen { display: flex; flex-direction: column; gap: 16px; }
+
+/* 시작 화면 */
+.title { padding-block: 12px; }
+.eyebrow {
+  margin: 0;
+  font-family: var(--font-num);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--chalk-dim);
+}
+.title h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(44px, 13vw, 72px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.lede { margin: 0; font-size: 17px; color: var(--chalk); max-width: 34em; }
+.rules {
+  margin: 0;
+  padding: 16px 18px 16px 38px;
+  background: var(--paper);
+  color: var(--ink);
+  border-top: 6px solid var(--omr);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rules b { color: var(--omr); }
+.room-field { display: flex; flex-direction: column; gap: 6px; }
+.room-field label { font-weight: 700; }
+.room-field input {
+  font-family: var(--font-num);
+  font-size: 22px;
+  letter-spacing: 0.2em;
+  padding: 10px 12px;
+  background: var(--board-2);
+  color: var(--chalk);
+  border: 1px solid var(--chalk-dim);
+  border-radius: 4px;
+  max-width: 220px;
+}
+.room-field input:focus-visible { outline: 2px solid var(--omr); outline-offset: 2px; }
+.hint { margin: 0; font-size: 13px; color: var(--chalk-dim); }
+
+/* 버튼 */
+.btn {
+  font: inherit;
+  font-weight: 700;
+  padding: 12px 14px;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  min-height: 48px;
+}
+.btn:hover:not(:disabled) { background: var(--omr-soft); }
+.btn:focus-visible { outline: 3px solid var(--omr); outline-offset: 2px; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.primary { background: var(--omr); border-color: var(--omr); color: #fff; }
+.btn.primary:hover:not(:disabled) { background: #b92f4e; }
+.title .btn.primary { align-self: flex-start; padding-inline: 28px; font-size: 17px; }
+
+/* 상태 표시줄 */
+.status { display: flex; flex-direction: column; gap: 6px; }
+.status-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.room { font-size: 13px; color: var(--chalk-dim); }
+.room b { font-family: var(--font-num); color: var(--chalk); }
+.period { font-family: var(--font-display); font-weight: 800; font-size: 22px; }
+.meters { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--chalk-dim); }
+.meter b { font-family: var(--font-num); color: var(--chalk); }
+.meter b.warn { color: #ff8fa6; }
+.pips { display: inline-flex; gap: 4px; vertical-align: middle; margin-left: 4px; }
+.pip { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--chalk); }
+.pip.on { background: var(--chalk); }
+
+/* 장면 */
+#scene {
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 192 / 108;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background: var(--board-2);
+  border: 4px solid #4d3b28;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* OMR 좌석 선택 */
+.seat-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  background: var(--paper);
+  padding: 10px 8px;
+  border-left: 8px solid var(--omr-soft);
+}
+.seat {
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: 0;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 4px 0;
+  min-width: 0;
+}
+.seat .bubble {
+  width: 26px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--omr);
+  color: var(--omr);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-num);
+  font-size: 14px;
+}
+.seat .nm { font-size: 12px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.seat[aria-pressed="true"] .bubble { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.seat:focus-visible { outline: 2px solid var(--omr); outline-offset: 2px; }
+.seat.guilty .bubble { background: var(--omr); border-color: var(--omr); color: #fff; }
+
+/* 패널 */
+.panel { display: flex; flex-direction: column; gap: 12px; }
+.sel-info { margin: 0; min-height: 3.2em; }
+.sel-info .who { font-weight: 700; }
+.sel-info .tag { font-size: 12px; color: var(--chalk-dim); margin-left: 6px; }
+.actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.actions .btn { padding-inline: 6px; font-size: 14px; }
+.btn.next { background: transparent; color: var(--chalk); border-color: var(--chalk-dim); border-style: dashed; }
+.btn.next:hover:not(:disabled) { background: var(--board-2); }
+.btn.next.ready { border-style: solid; border-color: var(--chalk); }
+
+/* 결과 */
+.result { background: var(--paper); color: var(--ink); padding: 18px; border-top: 6px solid var(--omr); }
+.grade-row { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.grade { margin: 0; font-family: var(--font-display); font-weight: 800; line-height: 1; }
+.grade span { font-size: 84px; }
+.grade small { font-size: 26px; margin-left: 4px; }
+.r-title { margin: 0; font-weight: 700; font-size: 20px; color: var(--omr); }
+.r-stats { margin: 0; color: var(--ink-soft); font-size: 14px; font-variant-numeric: tabular-nums; }
+.truth { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.truth li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 8px; align-items: start; }
+.truth .no {
+  width: 24px; height: 32px; border-radius: 50%;
+  border: 2px solid var(--ink-soft); display: grid; place-items: center;
+  font-family: var(--font-num); font-size: 13px;
+}
+.truth .guilty .no { background: var(--omr); border-color: var(--omr); color: #fff; }
+.truth .verdict { font-size: 12px; font-weight: 700; margin-left: 6px; }
+.truth .guilty .verdict { color: var(--omr); }
+.truth .innocent .verdict { color: var(--ok); }
+.truth p { margin: 0; font-size: 14px; color: var(--ink-soft); }
+.quote { margin: 0; padding: 12px 14px; background: var(--paper-2); font-family: var(--font-display); font-weight: 700; font-size: 17px; }
+.quote figcaption { font-family: var(--font-body); font-weight: 400; font-size: 13px; color: var(--ink-soft); margin-top: 4px; }
+.result-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.result-actions .btn { flex: 1 1 140px; }
+.share-line { margin: 0; font-size: 13px; color: var(--ink-soft); }
+.link-btn { font: inherit; background: none; border: 0; padding: 0; color: var(--omr); text-decoration: underline; cursor: pointer; }
+
+/* 감독 일지 */
+.logbook { background: var(--paper); color: var(--ink); padding: 14px 16px 16px 26px; border-left: 8px solid var(--omr-soft); }
+.logbook h2 { margin: 0 0 8px; font-family: var(--font-display); font-weight: 800; font-size: 18px; }
+#log { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+#log li { font-size: 14px; line-height: 1.55; }
+#log li.period {
+  font-family: var(--font-num);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--paper-2);
+  padding-top: 8px;
+}
+#log li.system { color: var(--ink-soft); }
+#log li .who { font-weight: 700; margin-right: 4px; }
+#log li .act { font-size: 11px; font-weight: 700; color: var(--omr); margin-right: 6px; letter-spacing: 0.04em; }
+#log li.talk .line { font-family: var(--font-display); font-weight: 700; }
+#log li.fresh { animation: fresh 1.2s ease-out; }
+@keyframes fresh { from { background: var(--omr-soft); } to { background: transparent; } }
+
+/* 결과 카드 */
+.overlay {
+  position: fixed; inset: 0; z-index: 20;
+  background: rgba(10, 18, 15, 0.86);
+  display: grid; place-items: center;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  overflow-y: auto;
+}
+.overlay-inner { max-width: 420px; width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.overlay-inner img { width: 100%; height: auto; display: block; }
+.overlay-actions { display: flex; gap: 8px; }
+.overlay-actions .btn { flex: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  #log li.fresh { animation: none; }
+}
+
+</style>
+<!-- app:start -->
+<div class="app">
+  <section id="title" class="screen title">
+    <p class="eyebrow">11월 19일 · 대학수학능력시험</p>
+    <h1>수능 감독관</h1>
+    <p class="lede">당신이 맡은 구역의 수험생은 다섯 명. 이 중 누군가 부정행위를 하고 있다. 아무도 안 하고 있을 수도 있다.</p>
+    <ol class="rules">
+      <li>교시마다 행동은 <b>두 번</b>. 가까이 관찰하거나 말을 건다.</li>
+      <li>소지품 검사는 시험 전체에서 <b>단 한 번</b>.</li>
+      <li>말을 걸 때마다 <b>민원</b> 1건. 무고한 수험생을 검사하면 2건.</li>
+      <li>4교시가 끝나면 부정행위자를 지목해 보고한다.</li>
+    </ol>
+    <div class="room-field">
+      <label for="room-input">시험실 번호</label>
+      <input id="room-input" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="비워 두면 무작위">
+      <p class="hint">친구와 같은 번호를 넣으면 같은 판을 합니다.</p>
+    </div>
+    <button id="start-btn" class="btn primary" type="button">감독 시작</button>
+  </section>
+
+  <section id="game" class="screen" hidden>
+    <header class="status">
+      <div class="status-top">
+        <span class="room">시험실 <b id="st-room"></b></span>
+        <span class="period" id="st-period"></span>
+      </div>
+      <div class="meters">
+        <span class="meter">행동 <span id="st-actions" class="pips"></span></span>
+        <span class="meter">검사 <b id="st-inspect"></b></span>
+        <span class="meter">민원 <b id="st-complaints"></b></span>
+      </div>
+    </header>
+
+    <canvas id="scene" width="192" height="108" aria-label="시험실 장면. 수험생을 눌러 선택하세요."></canvas>
+
+    <div class="seat-row" id="seat-row" role="group" aria-label="수험생 선택"></div>
+
+    <div id="play-panel" class="panel">
+      <p id="sel-info" class="sel-info">위 그림이나 번호를 눌러 수험생을 고르세요.</p>
+      <div class="actions">
+        <button id="btn-observe" class="btn" type="button">가까이 관찰</button>
+        <button id="btn-talk" class="btn" type="button">말 걸기</button>
+        <button id="btn-inspect" class="btn" type="button">소지품 검사</button>
+      </div>
+      <button id="btn-next" class="btn next" type="button"></button>
+    </div>
+
+    <div id="accuse-panel" class="panel" hidden>
+      <p class="sel-info">부정행위자로 보고할 수험생의 번호를 칠하세요. 없다고 생각하면 아무것도 칠하지 말고 제출합니다.</p>
+      <button id="btn-submit" class="btn primary" type="button"></button>
+    </div>
+
+    <section id="result-panel" class="panel result" hidden>
+      <div class="grade-row">
+        <p class="grade"><span id="r-grade"></span><small>등급</small></p>
+        <div>
+          <p id="r-title" class="r-title"></p>
+          <p id="r-stats" class="r-stats"></p>
+        </div>
+      </div>
+      <ol id="r-truth" class="truth"></ol>
+      <figure id="r-quote" class="quote"></figure>
+      <div class="result-actions">
+        <button id="btn-card" class="btn primary" type="button">결과 카드 만들기</button>
+        <button id="btn-retry" class="btn" type="button">같은 시험실 다시</button>
+        <button id="btn-new" class="btn" type="button">새 시험실</button>
+      </div>
+      <p class="share-line">친구에게 시험실 번호 <b id="r-room"></b>을 알려 주면 같은 판으로 대결할 수 있어요. <button id="btn-copy" class="link-btn" type="button">번호 복사</button></p>
+    </section>
+
+    <section class="logbook">
+      <h2>감독 일지</h2>
+      <ol id="log"></ol>
+    </section>
+  </section>
+
+  <div id="card-overlay" class="overlay" hidden>
+    <div class="overlay-inner">
+      <img id="card-img" alt="감독 결과 카드">
+      <p class="hint">이미지를 길게 누르거나 오른쪽 클릭해서 저장하세요.</p>
+      <div class="overlay-actions">
+        <button id="btn-share" class="btn primary" type="button">공유하기</button>
+        <button id="btn-close-card" class="btn" type="button">닫기</button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- app:end -->
+<script>
+(() => {
+// ---- src/data.js
+// 게임 내용(상황 조각). 상황을 늘리려면 이 파일만 고치면 된다.
+// {n} = 해당 수험생 번호, {m} = 짝(공범) 수험생 번호
+
+const PERIODS = [
+  { label: '1교시', subject: '국어', start: '08:40', end: '10:00', clock: [8, 40] },
+  { label: '2교시', subject: '수학', start: '10:30', end: '12:10', clock: [10, 30] },
+  { label: '3교시', subject: '영어', start: '13:10', end: '14:20', clock: [13, 10] },
+  { label: '4교시', subject: '한국사·탐구', start: '14:50', end: '16:37', clock: [14, 50] },
+];
+
+const SURNAMES = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오', '서', '신', '권', '황', '안', '송'];
+const GIVEN_NAMES = [
+  '민준', '서준', '도윤', '예준', '시우', '하준', '지호', '서연', '서윤', '지우',
+  '하은', '민서', '지민', '수아', '윤서', '채원', '현우', '유진', '은우', '다은',
+];
+
+// 성격: 질문했을 때 죄 유무와 상관없이 나오는 대사
+const TRAITS = {
+  nervous: {
+    label: '긴장형',
+    lines: [
+      '네? 저요? 저 아무것도… 아무것도 안 했어요…',
+      '죄송합니다! 아, 죄송할 일은 아닌가요?',
+      '지금 말 거시면 방금 푼 거 다 까먹을 것 같아요…',
+      '숨을… 어떻게 쉬는 거였죠…',
+    ],
+  },
+  calm: {
+    label: '침착형',
+    lines: [
+      '문제없습니다. 계속 풀어도 될까요?',
+      '네, 괜찮습니다.',
+      '감독관님도 고생 많으십니다.',
+      '……(고개만 끄덕인다)',
+    ],
+  },
+  wronged: {
+    label: '억울형',
+    lines: [
+      '아니 왜 저만 보세요? 저 진짜 억울해요.',
+      '저 3년 동안 지각 한 번 안 했어요.',
+      '옆자리도 좀 보세요. 저만 보지 마시고요.',
+    ],
+  },
+  odd: {
+    label: '엉뚱형',
+    lines: [
+      '감독관님, 혹시 점심 메뉴 아세요?',
+      '지금 몇 번 찍을지 고민 중이었어요. 3번 어때요?',
+      '이 교실 형광등 하나 깜빡이는 거 아셨어요?',
+    ],
+  },
+  model: {
+    label: '모범생형',
+    lines: [
+      '유의사항 다 숙지했습니다. 2쪽 3항까지요.',
+      '시간 배분상 지금 질문은 곤란합니다.',
+      '혹시 제가 규정을 위반했나요? 확인하고 싶습니다.',
+    ],
+  },
+};
+
+// 부정행위. periods가 있으면 그 교시에만 단서가 나온다(0부터 시작).
+// atEnd: true면 공개 단서가 교시 끝(종료령) 때 나온다.
+const CHEATS = {
+  watch: {
+    name: '스마트워치 소지',
+    public: [
+      '{n}번 수험생이 왼쪽 소매를 자꾸 끌어내려 손목을 덮는다.',
+      '{n}번 쪽에서 아주 짧게 "징" 하는 진동음이 들린 것 같다.',
+      '{n}번 수험생이 손목을 내려다볼 때마다 손가락이 화면을 넘기듯 움직인다.',
+    ],
+    close: [
+      '손목에 시계가 있다. 그런데 바늘이 보이지 않는다.',
+      '소매 끝에서 아주 잠깐 푸른빛이 새어 나왔다.',
+    ],
+    guiltyLines: [
+      '손목이요? 아, 그냥 시계예요. 그냥… 평범한 시계요.',
+      '소매요? 추워서요. 교실이 좀 춥지 않아요?',
+      '진동이요? 제 배에서 난 소리일 거예요.',
+    ],
+    inspect: { found: true, text: '소매 안쪽에서 스마트워치가 나왔다. 화면에 읽지 않은 메시지 3개.' },
+    reveal: '스마트워치를 차고 있었다.',
+  },
+  bell: {
+    name: '종료령 후 마킹',
+    atEnd: true,
+    public: [
+      '종료령이 울렸는데 {n}번 수험생의 손이 아직 OMR 카드 위에서 움직인다.',
+      '"필기구 내려놓으세요" 안내 뒤에도 {n}번 쪽에서 사각사각 소리가 난다.',
+      '답안지를 걷는데 {n}번 수험생이 마지막 순간까지 카드를 붙잡고 있다.',
+    ],
+    close: [
+      '시간이 한참 지났는데 OMR 카드는 거의 비어 있다. 마킹을 끝까지 미루는 중이다.',
+      '벽시계를 보며 "아직 괜찮아"라고 중얼거린다.',
+    ],
+    guiltyLines: [
+      '마킹은 마지막에 한 번에 하는 스타일이에요. 그게 효율적이거든요.',
+      '종이 울렸어요? 전 못 들었는데요.',
+      '펜이요? 손이 떨려서 움직인 거예요.',
+    ],
+    inspect: { found: false },
+    reveal: '종료령이 울린 뒤에도 답안을 마킹했다.',
+  },
+  peek: {
+    name: '옆 답안지 엿보기',
+    public: [
+      '{n}번 수험생의 고개가 또 옆자리 쪽으로 기울어졌다.',
+      '{n}번 수험생이 기지개를 켜는 척하며 옆을 본다. 벌써 세 번째다.',
+      '{n}번 수험생의 눈동자가 자기 시험지보다 옆자리에 더 오래 머문다.',
+    ],
+    close: [
+      '자기 문제지는 거의 비어 있는데 OMR 카드는 이상하게 잘 채워져 있다.',
+      '눈이 마주치자 급히 자기 문제지로 시선을 돌린다. 방금까지 옆을 보고 있었다.',
+    ],
+    guiltyLines: [
+      '목이 좀 결려서 스트레칭한 거예요.',
+      '옆이요? 창밖 본 건데요. 단풍이 예뻐서요.',
+      '저 원래 고개가 좀 기울어져 있어요. 태어날 때부터요.',
+    ],
+    inspect: { found: false },
+    reveal: '옆자리 답안지를 계속 엿봤다.',
+  },
+  eraser: {
+    name: '지우개 커닝 메모',
+    public: [
+      '{n}번 수험생이 지우개를 쓰지도 않으면서 한참 들여다본다.',
+      '{n}번 수험생이 지우개를 손바닥으로 가렸다가 슬쩍 연다.',
+      '{n}번 수험생이 문제를 읽다가 지우개를 보고, 다시 문제를 본다.',
+    ],
+    close: [
+      '지우개 표면이 이상하게 거뭇하다. 글씨인가? 너무 작아서 확실하지 않다.',
+      '새 지우개인데 한 번도 안 쓴 것 같다. 그런데 계속 만지작거린다.',
+    ],
+    guiltyLines: [
+      '지우개가 너무 귀여워서요. 보면 마음이 편해져요.',
+      '이거 엄마가 사 준 행운의 지우개예요.',
+      '지우개요? 아니 그냥… 지우개죠. 지우는 거.',
+    ],
+    inspect: { found: true, text: '지우개 포장지를 벗기자 안쪽에 깨알 같은 한국사 연표가 빼곡하다.' },
+    reveal: '지우개에 커닝 메모를 적어 왔다.',
+  },
+  twoSubjects: {
+    name: '탐구 동시 풀이',
+    periods: [3],
+    public: [
+      '첫 번째 선택과목 시간인데 {n}번 수험생 책상 위에 문제지가 두 권 펼쳐져 있다.',
+      '{n}번 수험생이 두 번째 과목 문제지를 몰래 넘겨본다.',
+    ],
+    close: [
+      '책상 아래에 두 번째 선택과목 문제지가 반쯤 꺼내져 있다.',
+      '지금 과목과 상관없는 문제에 밑줄을 긋고 있다.',
+    ],
+    guiltyLines: [
+      '아, 이거 순서 바뀐 줄 몰랐어요… 아니, 알았는데…',
+      '시간이 아까워서요. 효율이요, 효율.',
+    ],
+    inspect: { found: false },
+    reveal: '4교시 첫 번째 시간에 두 번째 선택과목을 풀었다.',
+  },
+  signal: {
+    name: '신호 주고받기',
+    pair: true,
+    public: [
+      '{n}번 수험생이 기침을 두 번 하자 {m}번 수험생이 답안지를 넘긴다.',
+      '{m}번 수험생이 펜으로 책상을 톡톡톡 친다. {n}번이 고개를 끄덕인다.',
+      '{n}번과 {m}번이 동시에 헛기침을 한다. 묘하게 박자가 맞는다.',
+    ],
+    close: [
+      '기침하기 전에 꼭 {m}번 쪽을 힐끗 본다.',
+      '책상을 두드리는 손가락 횟수가 매번 다르다. 한 번, 세 번, 두 번…',
+    ],
+    guiltyLines: [
+      '감기 걸렸어요. 수능날 감기라니, 불쌍하죠?',
+      '{m}번이요? 처음 보는 사람인데요. 진짜로요.',
+    ],
+    inspect: { found: false },
+    reveal: '{m}번 수험생과 기침 신호를 주고받았다.',
+  },
+};
+
+// 무고하지만 수상해 보이는 행동
+const HERRINGS = {
+  legShake: {
+    public: [
+      '{n}번 수험생의 다리가 책상이 흔들릴 만큼 떨린다.',
+      '{n}번 수험생 책상이 덜덜거린다. 옆자리가 쳐다본다.',
+    ],
+    close: ['긴장해서 무릎이 쉬지 않는다. 문제지는 빽빽하게 풀려 있다.'],
+    lines: ['다리요? 이거 안 떨면 머리가 안 돌아가요.', '죄송해요, 다리가 제 의지랑 상관없이 움직여요.'],
+    reveal: '긴장하면 다리를 떠는 습관이 있을 뿐이었다.',
+  },
+  analogWatch: {
+    public: [
+      '{n}번 수험생이 1분에 한 번씩 손목을 내려다본다.',
+      '{n}번 수험생이 손목을 보고 한숨을 쉰다.',
+    ],
+    close: [
+      '바늘 달린 아날로그 시계다. 볼 때마다 표정이 어두워진다.',
+      '시곗바늘을 보며 입술을 깨문다. 화면 같은 건 없다.',
+    ],
+    lines: ['시계 보는 거 금지 아니죠? 시간이 너무 빨리 가요.', '이거 할아버지가 주신 시계예요. 태엽 감는 거요.'],
+    reveal: '아날로그 시계로 남은 시간을 확인했을 뿐이다.',
+  },
+  mumble: {
+    public: ['{n}번 수험생이 입술을 달싹이며 뭔가 중얼거린다.'],
+    close: ['"침착하자, 침착하자…" 자기 최면 중이다.', '들어 보니 지문을 소리 없이 따라 읽고 있다.'],
+    lines: ['소리 내서 읽은 거 아니에요. 입만 움직였어요.', '혼잣말이요? 저 자신을 응원하고 있었어요.'],
+    reveal: '긴장을 풀려고 혼잣말을 했을 뿐이다.',
+  },
+  pray: {
+    public: ['{n}번 수험생이 두 손을 모으고 천장을 바라본다.'],
+    close: ['문제를 다 풀고, 하늘에 마지막 검토를 부탁하는 중이다.'],
+    lines: ['기도는 반입 금지 물품 아니잖아요.', '지금 하늘이랑 마지막 협상 중이에요.'],
+    reveal: '간절하게 기도했을 뿐이다.',
+  },
+  pencilRoll: {
+    public: ['{n}번 수험생이 육각 연필을 책상 위에 굴린다.', '{n}번 쪽에서 연필 굴러가는 소리가 또 난다.'],
+    close: ['연필 여섯 면에 1부터 5까지 숫자가 적혀 있다. 부정행위는 아닌데… 걱정된다.'],
+    lines: ['이건 확률의 영역이에요.', '6이 나오면 다시 굴려요. 나름 규칙이 있어요.'],
+    reveal: '모르는 문제를 연필 굴리기로 찍었을 뿐이다.',
+  },
+  window: {
+    public: ['{n}번 수험생이 창밖을 멍하니 본다.', '{n}번 수험생의 고개가 자꾸 창문 쪽으로 돌아간다.'],
+    close: ['창밖 은행나무를 보고 있다. 현실 도피 중이다.'],
+    lines: ['단풍이 너무 예뻐서요. 내년엔 저기서 놀고 싶어요.', '생각 정리 중이었어요. 창밖을 보면 정리가 잘 돼요.'],
+    reveal: '창밖을 보며 머리를 식혔을 뿐이다.',
+  },
+  rustle: {
+    public: ['{n}번 쪽에서 부스럭 소리가 난다.', '{n}번 수험생이 주머니에 손을 넣었다 뺐다 한다.'],
+    close: ['주머니 속 초콜릿 포장지를 만지작거린다. 쉬는 시간까지 참는 중이다.'],
+    lines: ['초콜릿이요… 아직 안 먹었어요. 만지기만 했어요.', '당 떨어져서 손이 먼저 반응했어요.'],
+    inspect: '주머니에서 반쯤 녹은 초콜릿이 나왔다.',
+    reveal: '주머니 속 초콜릿을 만지작거렸을 뿐이다.',
+  },
+  sleep: {
+    pose: 'sleep',
+    public: ['{n}번 수험생이 책상에 엎드렸다.', '{n}번 수험생이 엎드린 채 미동도 없다.'],
+    close: ['답안지는 다 채워져 있다. 다 풀고 자는 건지, 포기하고 자는 건지 알 수 없다.'],
+    lines: ['……네? 아, 다 풀었어요. 아마도요.', '눈 감고 검토하는 중이었어요.'],
+    reveal: '다 풀고 잤을 뿐이다.',
+  },
+  stomach: {
+    public: ['{n}번 쪽에서 꼬르륵 소리가 교실 전체에 울린다.'],
+    close: ['배를 움켜쥐고 있다. 아침을 못 먹은 모양이다.'],
+    lines: ['아침에 긴장해서 밥을 못 먹었어요…', '소리 났어요? 제 배 아닐 거예요. 아마.'],
+    reveal: '배가 고팠을 뿐이다.',
+  },
+};
+
+const NEUTRAL_CLOSE = [
+  '특별히 이상한 점은 없다. 문제를 열심히 풀고 있다.',
+  '고개를 숙이고 계산 중이다. 이상한 점은 보이지 않는다.',
+  '시험지에 밑줄이 빽빽하다. 이상한 점은 없는 것 같다.',
+  '지우개 가루를 조심스럽게 쓸어 모은다. 깔끔한 성격인 듯하다.',
+  '수험표와 신분증이 책상 모서리에 반듯하게 놓여 있다.',
+];
+
+// 누구에게나 나올 수 있는 애매한 관찰
+const MISLEADING_CLOSE = [
+  '손이 잠깐 책상 아래로 내려갔다가 올라온다. 뭘 한 걸까?',
+  '눈이 마주쳤는데 먼저 피한다. 원래 수줍은 성격일까?',
+  '감독관이 다가가자 펜 움직임이 잠깐 멈췄다.',
+];
+
+const GUILTY_NOT_FOUND = '소지품에서는 이상한 게 나오지 않았다. 그런데 표정이 묘하게 굳어 있다.';
+
+const INNOCENT_FINDS = [
+  '필통에서 "우리 아이 파이팅" 쪽지가 나왔다.',
+  '주머니에서 합격 엿이 나왔다. 포장에 "붙어라"라고 적혀 있다.',
+  '수험표 뒤에 "찍은 건 다 맞는다"라고 적혀 있다.',
+  '필통에 컴퓨터용 사인펜만 일곱 자루 들어 있다. 불안했나 보다.',
+  '주머니에서 부적이 나왔다. 반입 금지 물품은 아니다.',
+];
+
+const INSPECT_PROTEST = [
+  '저 이제 집중 다 깨졌어요. 책임지세요.',
+  '엄마한테 다 말할 거예요.',
+  '이거 민원 넣어도 되는 거죠?',
+];
+
+// 분위기용 사건. period를 지정하면 그 교시에만 나온다.
+const AMBIENT = [
+  { text: '복도에서 다른 감독관의 구두 소리가 지나간다.' },
+  { text: '형광등 하나가 잠깐 깜빡였다.' },
+  { text: '창밖에서 응원 온 후배들의 함성이 희미하게 들린다.', period: 0 },
+  { text: '부감독관이 하품을 참다가 눈물을 흘린다.' },
+  { text: '교실 어딘가에서 누군가 코를 훌쩍인다.' },
+  { text: '듣기평가 방송이 나오는 동안 교실이 쥐 죽은 듯 조용하다.', period: 2 },
+  { text: '점심을 먹은 뒤라 교실 공기가 나른하다.', period: 2 },
+  { text: '해가 기울어 교실 바닥에 긴 그림자가 진다.', period: 3 },
+];
+
+// 도트 외모 부품
+const LOOKS = {
+  skin: ['#f1c9a5', '#e8b98f', '#d4a27a', '#c08a63'],
+  hair: ['#1d1917', '#2e231d', '#3d2a1f', '#4a3326'],
+  hairStyle: ['short', 'buzz', 'long', 'bob', 'fluffy'],
+  clothes: [
+    { body: '#2b3a5e', trim: '#e9ecef', kind: 'uniform' },
+    { body: '#757b84', trim: '#5f646c', kind: 'hoodie' },
+    { body: '#28282d', trim: '#3c3c44', kind: 'padding' },
+    { body: '#6b2f3b', trim: '#e9ecef', kind: 'uniform' },
+    { body: '#3e5a4b', trim: '#30473b', kind: 'hoodie' },
+    { body: '#a59a86', trim: '#8b806d', kind: 'padding' },
+  ],
+};
+
+// ---- src/game.js
+// 게임 규칙. 화면과 분리된 순수 로직이라 테스트하기 쉽다.
+// 상태(state)는 평범한 JSON 객체라 저장/복원이 가능하다.
+
+const SEATS = [1, 2, 3, 4, 5];
+const ACTIONS_PER_PERIOD = 2;
+const COMPLAINT_LIMIT = 6;
+
+// 시드 고정 난수: 같은 시험실 번호면 같은 판이 나온다.
+function makeRng(seed) {
+  let a = seed >>> 0;
+  const next = () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  return {
+    next,
+    int: (lo, hi) => lo + Math.floor(next() * (hi - lo + 1)),
+    pick: (arr) => arr[Math.floor(next() * arr.length)],
+    chance: (p) => next() < p,
+    shuffle: (arr) => {
+      const out = arr.slice();
+      for (let i = out.length - 1; i > 0; i--) {
+        const j = Math.floor(next() * (i + 1));
+        [out[i], out[j]] = [out[j], out[i]];
+      }
+      return out;
+    },
+  };
+}
+
+function normalizeRoom(value) {
+  const n = parseInt(String(value).replace(/\D/g, ''), 10);
+  if (!Number.isFinite(n) || n < 1000 || n > 9999) return null;
+  return n;
+}
+
+function randomRoom() {
+  return 1000 + Math.floor(Math.random() * 9000);
+}
+
+function fill(text, n, m) {
+  return text.split('{n}').join(String(n)).split('{m}').join(m == null ? '' : String(m));
+}
+
+function actionRng(state, salt) {
+  return makeRng((Math.imul(state.room, 2654435761) + state.actionIndex * 7919 + salt) >>> 0);
+}
+
+function makeLook(rng) {
+  return {
+    skin: rng.pick(LOOKS.skin),
+    hair: rng.pick(LOOKS.hair),
+    hairStyle: rng.pick(LOOKS.hairStyle),
+    glasses: rng.chance(0.4),
+    clothes: rng.pick(LOOKS.clothes),
+  };
+}
+
+function student(state, seat) {
+  return state.students.find((s) => s.seat === seat);
+}
+
+function label(s) {
+  return `${s.seat}번 ${s.name}`;
+}
+
+function newGame(room) {
+  const rng = makeRng(Math.imul(room, 7919) + 13);
+  const given = rng.shuffle(GIVEN_NAMES);
+  const traitKeys = rng.shuffle(Object.keys(TRAITS));
+  const students = SEATS.map((seat, i) => ({
+    seat,
+    name: rng.pick(SURNAMES) + given[i],
+    trait: traitKeys[i % traitKeys.length],
+    look: makeLook(rng),
+    guilty: false,
+    cheat: null,
+    partner: null,
+    herring: null,
+    closeIdx: 0,
+    herringSeen: false,
+    mood: 'normal',
+  }));
+
+  // 부정행위자 수: 0명 12%, 1명 70%, 2명 18%
+  const roll = rng.next();
+  const count = roll < 0.12 ? 0 : roll < 0.82 ? 1 : 2;
+  const culpritSeats = rng.shuffle(SEATS).slice(0, count).sort((a, b) => a - b);
+
+  if (count === 2 && rng.chance(0.5)) {
+    const [a, b] = culpritSeats;
+    Object.assign(students[a - 1], { guilty: true, cheat: 'signal', partner: b });
+    Object.assign(students[b - 1], { guilty: true, cheat: 'signal', partner: a });
+  } else {
+    const pool = rng.shuffle(Object.keys(CHEATS).filter((k) => !CHEATS[k].pair));
+    culpritSeats.forEach((seat, i) => Object.assign(students[seat - 1], { guilty: true, cheat: pool[i] }));
+  }
+
+  const herringPool = rng.shuffle(Object.keys(HERRINGS));
+  students.filter((s) => !s.guilty).forEach((s, i) => { s.herring = herringPool[i % herringPool.length]; });
+
+  // 교시별 공개 사건 배치
+  const schedule = PERIODS.map(() => []);
+  const endSchedule = PERIODS.map(() => []);
+  const spreadPeriods = (min, max) => rng.shuffle([0, 1, 2, 3]).slice(0, rng.int(min, max)).sort((a, b) => a - b);
+
+  for (const s of students) {
+    if (s.guilty) {
+      const c = CHEATS[s.cheat];
+      if (c.pair && s.partner < s.seat) continue; // 짝 신호는 한 번만 배치
+      const texts = rng.shuffle(c.public);
+      if (c.periods) {
+        const p = c.periods[0];
+        schedule[p].push({ text: fill(texts[0], s.seat, s.partner), seats: [s.seat] });
+        endSchedule[p].push({ text: fill(texts[1 % texts.length], s.seat, s.partner), seats: [s.seat] });
+      } else {
+        spreadPeriods(2, 3).forEach((p, i) => {
+          const ev = { text: fill(texts[i % texts.length], s.seat, s.partner), seats: s.partner ? [s.seat, s.partner] : [s.seat] };
+          (c.atEnd ? endSchedule : schedule)[p].push(ev);
+        });
+      }
+    } else {
+      const h = HERRINGS[s.herring];
+      const texts = rng.shuffle(h.public);
+      spreadPeriods(1, 2).forEach((p, i) => {
+        schedule[p].push({ text: fill(texts[i % texts.length], s.seat), seats: [s.seat] });
+      });
+    }
+  }
+  PERIODS.forEach((_, p) => {
+    if (rng.chance(0.55)) {
+      const options = AMBIENT.filter((a) => a.period == null || a.period === p);
+      schedule[p].push({ text: rng.pick(options).text, seats: [] });
+    }
+  });
+
+  const state = {
+    v: 1,
+    room,
+    phase: 'play',
+    period: 0,
+    actionsLeft: ACTIONS_PER_PERIOD,
+    inspectLeft: 1,
+    complaints: 0,
+    actionIndex: 0,
+    students,
+    schedule: schedule.map((list) => rng.shuffle(list)),
+    endSchedule,
+    log: [],
+    quotes: [],
+    accused: [],
+    result: null,
+  };
+  startPeriod(state);
+  return state;
+}
+
+function push(state, entry) {
+  state.log.push({ period: state.period, ...entry });
+}
+
+function startPeriod(state) {
+  const p = PERIODS[state.period];
+  push(state, { kind: 'period', text: `${p.label} ${p.subject} 시작 · ${p.start}` });
+  state.schedule[state.period].forEach((ev) => push(state, { kind: 'event', text: ev.text, seats: ev.seats }));
+}
+
+function canAct(state) {
+  return state.phase === 'play' && state.actionsLeft > 0;
+}
+
+function spend(state) {
+  state.actionsLeft -= 1;
+  state.actionIndex += 1;
+}
+
+function cheatActive(state, s) {
+  const c = CHEATS[s.cheat];
+  return !c.periods || c.periods.includes(state.period);
+}
+
+function observe(state, seat) {
+  if (!canAct(state)) return null;
+  const s = student(state, seat);
+  const rng = actionRng(state, 1);
+  let text;
+  if (s.guilty) {
+    const c = CHEATS[s.cheat];
+    if (cheatActive(state, s) && rng.chance(0.7)) {
+      text = fill(c.close[s.closeIdx % c.close.length], s.seat, s.partner);
+      s.closeIdx += 1;
+    } else {
+      text = rng.chance(0.25) ? rng.pick(MISLEADING_CLOSE) : rng.pick(NEUTRAL_CLOSE);
+    }
+  } else if (!s.herringSeen) {
+    text = rng.pick(HERRINGS[s.herring].close);
+    s.herringSeen = true;
+  } else {
+    text = rng.chance(0.25) ? rng.pick(MISLEADING_CLOSE) : rng.pick(NEUTRAL_CLOSE);
+  }
+  push(state, { kind: 'observe', seats: [seat], text });
+  spend(state);
+  return text;
+}
+
+function talk(state, seat) {
+  if (!canAct(state)) return null;
+  const s = student(state, seat);
+  const rng = actionRng(state, 2);
+  let line;
+  if (s.guilty && cheatActive(state, s) && rng.chance(0.55)) {
+    line = fill(rng.pick(CHEATS[s.cheat].guiltyLines), s.seat, s.partner);
+  } else if (!s.guilty && rng.chance(0.55)) {
+    line = rng.pick(HERRINGS[s.herring].lines);
+  } else {
+    line = rng.pick(TRAITS[s.trait].lines);
+  }
+  s.mood = 'nervous';
+  state.complaints += 1;
+  state.quotes.push({ seat, name: s.name, text: line });
+  push(state, { kind: 'talk', seats: [seat], text: line });
+  spend(state);
+  return line;
+}
+
+function inspect(state, seat) {
+  if (!canAct(state) || state.inspectLeft < 1) return null;
+  const s = student(state, seat);
+  const rng = actionRng(state, 3);
+  let text;
+  if (s.guilty) {
+    const c = CHEATS[s.cheat];
+    text = c.inspect.found ? c.inspect.text : GUILTY_NOT_FOUND;
+    s.mood = c.inspect.found ? 'shocked' : 'nervous';
+  } else {
+    text = HERRINGS[s.herring].inspect || rng.pick(INNOCENT_FINDS);
+    s.mood = 'wronged';
+    state.complaints += 2;
+    const protest = rng.pick(INSPECT_PROTEST);
+    state.quotes.push({ seat, name: s.name, text: protest });
+    text += ` "${protest}"`;
+  }
+  state.inspectLeft -= 1;
+  push(state, { kind: 'inspect', seats: [seat], text });
+  spend(state);
+  return text;
+}
+
+function endPeriod(state) {
+  if (state.phase !== 'play') return;
+  const p = PERIODS[state.period];
+  state.endSchedule[state.period].forEach((ev) => push(state, { kind: 'event', text: ev.text, seats: ev.seats }));
+  push(state, { kind: 'system', text: `${p.label} 종료 · ${p.end}. 답안지를 걷었다.` });
+  state.students.forEach((s) => { if (s.mood === 'nervous') s.mood = 'normal'; });
+  state.actionIndex += 1;
+  if (state.period < PERIODS.length - 1) {
+    state.period += 1;
+    state.actionsLeft = ACTIONS_PER_PERIOD;
+    startPeriod(state);
+  } else {
+    state.phase = 'accuse';
+    state.actionsLeft = 0;
+    push(state, { kind: 'system', text: '모든 교시가 끝났다. 감독 보고서를 쓸 시간이다.' });
+  }
+}
+
+function toggleAccuse(state, seat) {
+  if (state.phase !== 'accuse') return;
+  const i = state.accused.indexOf(seat);
+  if (i >= 0) state.accused.splice(i, 1);
+  else state.accused.push(seat);
+  state.accused.sort((a, b) => a - b);
+}
+
+function score({ culprits, accused, complaints }) {
+  const caught = accused.filter((s) => culprits.includes(s)).length;
+  const falseCount = accused.length - caught;
+  const missed = culprits.length - caught;
+  const total = culprits.length;
+
+  let grade;
+  if (total === 0) grade = falseCount === 0 ? 1 : 6 + Math.min(falseCount, 3);
+  else if (caught === total && falseCount === 0) grade = 1;
+  else if (caught === total) grade = 4;
+  else if (caught > 0 && falseCount === 0) grade = 3;
+  else if (caught > 0) grade = 5;
+  else if (falseCount === 0) grade = 7;
+  else grade = 9;
+  if (complaints >= COMPLAINT_LIMIT) grade += 2;
+  else if (complaints >= 4) grade += 1;
+  grade = Math.max(1, Math.min(9, grade));
+
+  let title;
+  if (total === 0 && falseCount === 0) title = '평화를 지킨 감독관';
+  else if (total === 0) title = '죄 없는 수험생을 잡은 감독관';
+  else if (caught === total && falseCount === 0) title = complaints >= 4 ? '시끄러운 명탐정' : '매의 눈';
+  else if (caught === 0 && falseCount > 0) title = '엉뚱한 수험생을 잡은 감독관';
+  else if (caught === 0) title = '아무것도 못 본 감독관';
+  else if (falseCount > 0) title = '반은 맞고 반은 민원';
+  else title = '아깝게 놓친 감독관';
+  if (complaints >= COMPLAINT_LIMIT && grade >= 3) title = '민원 폭탄 감독관';
+
+  return { grade, title, caught, falseCount, missed, total };
+}
+
+function submitReport(state) {
+  if (state.phase !== 'accuse') return null;
+  const culprits = state.students.filter((s) => s.guilty).map((s) => s.seat);
+  const result = score({ culprits, accused: state.accused, complaints: state.complaints });
+  const rng = actionRng(state, 4);
+  result.quote = state.quotes.length ? rng.pick(state.quotes) : null;
+  state.result = result;
+  state.phase = 'result';
+  state.students.forEach((s) => {
+    if (state.accused.includes(s.seat)) s.mood = s.guilty ? 'shocked' : 'wronged';
+  });
+  return result;
+}
+
+function truth(s) {
+  if (s.guilty) return { guilty: true, name: CHEATS[s.cheat].name, text: fill(CHEATS[s.cheat].reveal, s.seat, s.partner) };
+  return { guilty: false, name: '무고', text: HERRINGS[s.herring].reveal };
+}
+
+function clockTime(state) {
+  const p = PERIODS[Math.min(state.period, PERIODS.length - 1)];
+  const used = state.phase === 'play' ? ACTIONS_PER_PERIOD - state.actionsLeft : ACTIONS_PER_PERIOD + 1;
+  const minutes = p.clock[0] * 60 + p.clock[1] + used * 25;
+  return [Math.floor(minutes / 60), minutes % 60];
+}
+
+// ---- src/pixel.js
+// 도트 시험실. 이미지 파일 없이 사각형을 찍어서 그린다.
+// 논리 해상도 192x108을 화면에서 확대한다(image-rendering: pixelated).
+
+
+const SCENE_W = 192;
+const SCENE_H = 108;
+const DESK_X = [22, 59, 96, 133, 170];
+
+const C = {
+  wall: '#c7cdbd',
+  wallShade: '#b3baa8',
+  trim: '#8d9583',
+  floor: '#8a6b4c',
+  floorLine: '#78593c',
+  boardFrame: '#6b5137',
+  board: '#2c4a3e',
+  chalk: '#e6ece3',
+  chalkDim: '#9fb4a6',
+  deskTop: '#c19463',
+  deskFront: '#9a7148',
+  deskEdge: '#7d5a37',
+  metal: '#5d6468',
+  paper: '#f4f5f1',
+  omr: '#e0607d',
+  ink: '#1b1f1d',
+  sky: '#a9cde0',
+  ginkgo: '#e8c33c',
+  ginkgoDark: '#c99a22',
+  sweat: '#8fd0ff',
+  mark: '#e23d5f',
+  ok: '#4fbf7a',
+  blush: '#e98a8a',
+  plate: '#eef0ea',
+};
+
+// 3x5 숫자 글꼴
+const DIGITS = {
+  0: ['111', '101', '101', '101', '111'],
+  1: ['010', '110', '010', '010', '111'],
+  2: ['111', '001', '111', '100', '111'],
+  3: ['111', '001', '111', '001', '111'],
+  4: ['101', '101', '111', '001', '001'],
+  5: ['111', '100', '111', '001', '111'],
+  6: ['111', '100', '111', '101', '111'],
+  7: ['111', '001', '010', '010', '010'],
+  8: ['111', '101', '111', '101', '111'],
+  9: ['111', '101', '111', '001', '111'],
+  ':': ['0', '1', '0', '1', '0'],
+};
+
+function rect(ctx, x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(x), Math.round(y), w, h);
+}
+
+function text3x5(ctx, str, x, y, color) {
+  let cx = x;
+  for (const ch of str) {
+    const g = DIGITS[ch];
+    if (!g) { cx += 2; continue; }
+    g.forEach((row, ry) => {
+      [...row].forEach((bit, rx) => { if (bit === '1') rect(ctx, cx + rx, y + ry, 1, 1, color); });
+    });
+    cx += g[0].length + 1;
+  }
+}
+
+function drawRoom(ctx, state) {
+  rect(ctx, 0, 0, SCENE_W, 62, C.wall);
+  rect(ctx, 0, 54, SCENE_W, 8, C.wallShade);
+  rect(ctx, 0, 54, SCENE_W, 1, C.trim);
+  rect(ctx, 0, 62, SCENE_W, SCENE_H - 62, C.floor);
+  for (let y = 68; y < SCENE_H; y += 7) rect(ctx, 0, y, SCENE_W, 1, C.floorLine);
+
+  // 창문과 은행나무
+  rect(ctx, 3, 7, 22, 36, C.boardFrame);
+  rect(ctx, 5, 9, 18, 32, C.sky);
+  rect(ctx, 13, 9, 1, 32, C.boardFrame);
+  rect(ctx, 5, 24, 18, 1, C.boardFrame);
+  const leaves = [[6, 12], [8, 10], [10, 13], [15, 11], [17, 14], [19, 12], [7, 16], [16, 17], [20, 19], [9, 19], [11, 27], [18, 29], [6, 33], [20, 34]];
+  leaves.forEach(([x, y], i) => {
+    rect(ctx, x, y, 2, 2, i % 3 ? C.ginkgo : C.ginkgoDark);
+  });
+
+  // 칠판: 교시와 현재 시각
+  rect(ctx, 34, 5, 124, 32, C.boardFrame);
+  rect(ctx, 36, 7, 120, 28, C.board);
+  rect(ctx, 36, 35, 120, 2, C.deskEdge);
+  const [h, m] = clockTime(state);
+  const period = Math.min(state.period, 3) + 1;
+  text3x5(ctx, String(period), 42, 12, C.chalk);
+  // "교시" 대신 짧은 분필 낙서
+  rect(ctx, 47, 13, 9, 1, C.chalkDim);
+  rect(ctx, 47, 15, 7, 1, C.chalkDim);
+  text3x5(ctx, `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`, 128, 12, C.chalk);
+  // 유의사항 낙서 줄
+  rect(ctx, 42, 22, 52, 1, C.chalkDim);
+  rect(ctx, 42, 25, 40, 1, C.chalkDim);
+  rect(ctx, 42, 28, 58, 1, C.chalkDim);
+  rect(ctx, 104, 22, 18, 1, C.chalkDim);
+  // 분필통
+  rect(ctx, 96, 34, 3, 1, C.chalk);
+  rect(ctx, 101, 34, 2, 1, C.omr);
+
+  // 벽시계
+  const cx = 176, cy = 16;
+  rect(ctx, cx - 6, cy - 7, 13, 15, C.ink);
+  rect(ctx, cx - 5, cy - 6, 11, 13, C.plate);
+  rect(ctx, cx, cy, 1, 1, C.ink);
+  const hourAngle = (((h % 12) + m / 60) / 12) * Math.PI * 2;
+  const minAngle = (m / 60) * Math.PI * 2;
+  for (let r = 1; r <= 3; r++) rect(ctx, cx + Math.round(Math.sin(hourAngle) * r), cy - Math.round(Math.cos(hourAngle) * r), 1, 1, C.ink);
+  for (let r = 1; r <= 5; r++) rect(ctx, cx + Math.round(Math.sin(minAngle) * r), cy - Math.round(Math.cos(minAngle) * r), 1, 1, C.mark);
+}
+
+function drawHair(ctx, x, y, look, behind) {
+  const c = look.hair;
+  switch (look.hairStyle) {
+    case 'buzz':
+      if (!behind) rect(ctx, x - 6, y - 2, 12, 3, c);
+      break;
+    case 'long':
+      if (behind) rect(ctx, x - 7, y, 14, 15, c);
+      else { rect(ctx, x - 6, y - 2, 12, 4, c); rect(ctx, x - 7, y, 2, 10, c); rect(ctx, x + 5, y, 2, 10, c); }
+      break;
+    case 'bob':
+      if (!behind) { rect(ctx, x - 7, y - 2, 14, 5, c); rect(ctx, x - 7, y + 3, 2, 6, c); rect(ctx, x + 5, y + 3, 2, 6, c); }
+      break;
+    case 'fluffy':
+      if (!behind) {
+        rect(ctx, x - 7, y - 3, 14, 5, c);
+        rect(ctx, x - 5, y - 4, 3, 1, c);
+        rect(ctx, x + 1, y - 4, 4, 1, c);
+        rect(ctx, x - 7, y + 2, 1, 3, c);
+        rect(ctx, x + 6, y + 2, 1, 3, c);
+      }
+      break;
+    default:
+      if (!behind) { rect(ctx, x - 6, y - 2, 12, 4, c); rect(ctx, x - 6, y + 2, 1, 3, c); rect(ctx, x + 5, y + 2, 1, 3, c); }
+  }
+}
+
+function drawFace(ctx, x, y, s, blink) {
+  const eyeY = y + 5;
+  const mood = s.mood;
+  if (mood === 'shocked') {
+    rect(ctx, x - 3, eyeY - 1, 2, 2, C.ink);
+    rect(ctx, x + 2, eyeY - 1, 2, 2, C.ink);
+    rect(ctx, x - 1, y + 8, 2, 2, C.ink);
+  } else {
+    if (blink) {
+      rect(ctx, x - 3, eyeY, 2, 1, C.ink);
+      rect(ctx, x + 2, eyeY, 2, 1, C.ink);
+    } else {
+      rect(ctx, x - 3, eyeY - 1, 1, 2, C.ink);
+      rect(ctx, x + 2, eyeY - 1, 1, 2, C.ink);
+    }
+    if (mood === 'nervous') {
+      rect(ctx, x - 2, y + 9, 1, 1, C.ink);
+      rect(ctx, x - 1, y + 8, 1, 1, C.ink);
+      rect(ctx, x, y + 9, 1, 1, C.ink);
+      rect(ctx, x + 1, y + 8, 1, 1, C.ink);
+    } else if (mood === 'wronged') {
+      rect(ctx, x - 4, eyeY - 3, 2, 1, C.ink);
+      rect(ctx, x + 3, eyeY - 3, 2, 1, C.ink);
+      rect(ctx, x - 2, y + 9, 4, 1, C.ink);
+      rect(ctx, x - 5, y + 7, 1, 1, C.blush);
+      rect(ctx, x + 5, y + 7, 1, 1, C.blush);
+    } else {
+      rect(ctx, x - 1, y + 9, 3, 1, C.ink);
+    }
+  }
+  if (s.look.glasses) {
+    ctx.strokeStyle = C.ink;
+    rect(ctx, x - 4, eyeY - 2, 4, 1, C.ink);
+    rect(ctx, x + 1, eyeY - 2, 4, 1, C.ink);
+    rect(ctx, x - 4, eyeY + 1, 4, 1, C.ink);
+    rect(ctx, x + 1, eyeY + 1, 4, 1, C.ink);
+    rect(ctx, x - 4, eyeY - 2, 1, 4, C.ink);
+    rect(ctx, x + 4, eyeY - 2, 1, 4, C.ink);
+    rect(ctx, x, eyeY - 1, 1, 1, C.ink);
+  }
+}
+
+function drawStudent(ctx, s, t, opts) {
+  const seed = s.seat * 977;
+  const reduce = opts.reduceMotion;
+  const herring = s.herring ? HERRINGS[s.herring] : null;
+  const sleeping = herring && herring.pose === 'sleep' && opts.phase !== 'result';
+  let x = DESK_X[s.seat - 1];
+  let deskShake = 0;
+  if (!reduce && s.herring === 'legShake' && Math.floor(t / 110) % 2 === 0) deskShake = 1;
+  // 엿보기 수험생은 가끔 고개가 옆으로 간다
+  let headShift = 0;
+  if (!reduce && s.cheat === 'peek' && (t + seed) % 4200 < 700) headShift = s.seat < 3 ? 2 : -2;
+  const bob = !reduce && (t + seed) % 2600 < 160 ? 1 : 0;
+  const blink = (t + seed * 3) % 3700 < 140;
+
+  const headY = sleeping ? 53 : 40 + bob;
+  const hx = x + headShift;
+  const cl = s.look.clothes;
+
+  // 몸
+  rect(ctx, x - 8, 53, 16, 12, cl.body);
+  if (cl.kind === 'uniform') {
+    rect(ctx, x - 2, 53, 4, 3, cl.trim);
+    rect(ctx, x - 1, 56, 2, 1, cl.trim);
+  } else if (cl.kind === 'hoodie') {
+    rect(ctx, x - 5, 53, 10, 2, cl.trim);
+  } else {
+    rect(ctx, x - 8, 58, 16, 1, cl.trim);
+  }
+  // 팔
+  rect(ctx, x - 10, 59, 4, 5, cl.body);
+  rect(ctx, x + 6, 59, 4, 5, cl.body);
+
+  // 머리
+  if (!sleeping) drawHair(ctx, hx, headY, s.look, true);
+  if (sleeping) {
+    rect(ctx, hx - 6, headY, 12, 8, s.look.hair);
+  } else {
+    rect(ctx, hx - 5, headY, 10, 12, s.look.skin);
+    rect(ctx, hx - 6, headY + 2, 1, 7, s.look.skin);
+    rect(ctx, hx + 5, headY + 2, 1, 7, s.look.skin);
+    drawHair(ctx, hx, headY, s.look, false);
+    drawFace(ctx, hx, headY, s, blink);
+    if (s.mood === 'nervous' || s.mood === 'shocked') {
+      rect(ctx, hx + 7, headY + 1, 1, 1, C.sweat);
+      rect(ctx, hx + 6, headY + 2, 3, 2, C.sweat);
+    }
+  }
+
+  // 책상
+  const dx = x + deskShake;
+  rect(ctx, dx - 15, 63, 30, 4, C.deskTop);
+  rect(ctx, dx - 15, 67, 30, 1, C.deskEdge);
+  rect(ctx, dx - 9, 62, 11, 2, C.paper);
+  rect(ctx, dx + 4, 62, 6, 2, C.omr);
+  rect(ctx, dx - 14, 68, 28, 13, C.deskFront);
+  rect(ctx, dx - 14, 80, 28, 1, C.deskEdge);
+  rect(ctx, dx - 13, 81, 2, 15, C.metal);
+  rect(ctx, dx + 11, 81, 2, 15, C.metal);
+  // 손(책상 위)
+  rect(ctx, x - 9, 62, 3, 2, s.look.skin);
+  rect(ctx, x + 6, 62, 3, 2, s.look.skin);
+  // 좌석 번호판
+  rect(ctx, dx - 3, 71, 7, 7, C.plate);
+  text3x5(ctx, String(s.seat), dx - 1, 72, C.ink);
+
+  // 표시: 선택, 지목, 결과
+  const top = headY - 9;
+  if (opts.phase === 'result') {
+    const markColor = s.guilty ? C.mark : C.ok;
+    const accused = opts.accused.includes(s.seat);
+    if (s.guilty || accused) {
+      rect(ctx, x - 3, top - 2, 7, 7, markColor);
+      if (s.guilty) {
+        rect(ctx, x, top - 1, 1, 3, C.plate);
+        rect(ctx, x, top + 3, 1, 1, C.plate);
+      } else {
+        rect(ctx, x - 1, top + 2, 1, 1, C.plate);
+        rect(ctx, x, top + 3, 1, 1, C.plate);
+        rect(ctx, x + 1, top + 2, 1, 1, C.plate);
+        rect(ctx, x + 2, top + 1, 1, 1, C.plate);
+      }
+    }
+  } else if (opts.phase === 'accuse' && opts.accused.includes(s.seat)) {
+    rect(ctx, x - 3, top - 1, 7, 5, C.mark);
+    rect(ctx, x - 2, top - 2, 5, 7, C.mark);
+  } else if (opts.selected === s.seat) {
+    const up = reduce ? 0 : Math.floor(t / 300) % 2;
+    rect(ctx, x - 3, top - up, 7, 1, C.mark);
+    rect(ctx, x - 2, top + 1 - up, 5, 1, C.mark);
+    rect(ctx, x - 1, top + 2 - up, 3, 1, C.mark);
+    rect(ctx, x, top + 3 - up, 1, 1, C.mark);
+  }
+}
+
+function drawScene(ctx, state, opts) {
+  const o = { t: 0, selected: null, reduceMotion: false, ...opts, phase: state.phase, accused: state.accused };
+  ctx.imageSmoothingEnabled = false;
+  drawRoom(ctx, state);
+  state.students.forEach((s) => drawStudent(ctx, s, o.t, o));
+}
+
+// 화면 좌표(논리 해상도 기준)를 좌석 번호로
+function seatAt(x, y) {
+  if (y < 28 || y > 98) return null;
+  let best = null;
+  DESK_X.forEach((dx, i) => {
+    if (Math.abs(x - dx) <= 17) best = i + 1;
+  });
+  return best;
+}
+
+// ---- src/card.js
+// 결과 공유 카드(1080x1350) 이미지 만들기
+
+
+const CARD_W = 1080;
+const CARD_H = 1350;
+
+const K = {
+  board: '#1f332c',
+  paper: '#eef0ea',
+  ink: '#1b1f1d',
+  muted: '#6d7a72',
+  omr: '#d23a5c',
+  omrSoft: '#f3d3db',
+  line: '#c9cfc6',
+};
+
+function wrapLines(ctx, text, maxWidth) {
+  const lines = [];
+  let line = '';
+  for (const ch of text) {
+    const next = line + ch;
+    if (ctx.measureText(next).width > maxWidth && line) {
+      lines.push(line);
+      line = ch === ' ' ? '' : ch;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function renderCard(state) {
+  const canvas = document.createElement('canvas');
+  canvas.width = CARD_W;
+  canvas.height = CARD_H;
+  const ctx = canvas.getContext('2d');
+  const r = state.result;
+  const serif = '"Nanum Myeongjo", "Noto Serif KR", serif';
+  const sans = '"IBM Plex Sans KR", "Apple SD Gothic Neo", sans-serif';
+
+  ctx.fillStyle = K.board;
+  ctx.fillRect(0, 0, CARD_W, CARD_H);
+
+  // 종이
+  const px = 60, py = 60, pw = CARD_W - 120, ph = CARD_H - 120;
+  ctx.fillStyle = K.paper;
+  ctx.fillRect(px, py, pw, ph);
+  ctx.fillStyle = K.omr;
+  ctx.fillRect(px, py, pw, 14);
+
+  ctx.fillStyle = K.muted;
+  ctx.font = `600 30px ${sans}`;
+  ctx.textBaseline = 'top';
+  ctx.fillText(`시험실 ${state.room} · 감독 보고서`, px + 56, py + 56);
+
+  // 도트 장면
+  const scene = document.createElement('canvas');
+  scene.width = SCENE_W;
+  scene.height = SCENE_H;
+  drawScene(scene.getContext('2d'), state, { t: 1000, reduceMotion: true });
+  ctx.imageSmoothingEnabled = false;
+  const sw = SCENE_W * 4;
+  const sh = SCENE_H * 4;
+  ctx.drawImage(scene, px + (pw - sw) / 2, py + 110, sw, sh);
+
+  // 등급
+  let y = py + 110 + sh + 50;
+  ctx.fillStyle = K.ink;
+  ctx.font = `800 150px ${serif}`;
+  ctx.fillText(String(r.grade), px + 56, y);
+  const gw = ctx.measureText(String(r.grade)).width;
+  ctx.font = `800 60px ${serif}`;
+  ctx.fillStyle = K.ink;
+  ctx.fillText('등급', px + 56 + gw + 14, y + 72);
+  ctx.fillStyle = K.omr;
+  ctx.font = `700 46px ${sans}`;
+  ctx.fillText(r.title, px + 56, y + 150);
+
+  y += 220;
+  ctx.fillStyle = K.line;
+  ctx.fillRect(px + 56, y, pw - 112, 2);
+  y += 28;
+  ctx.fillStyle = K.ink;
+  ctx.font = `500 34px ${sans}`;
+  const stats = r.total === 0
+    ? `부정행위자 없음 · 잘못 지목 ${r.falseCount}명 · 민원 ${state.complaints}건`
+    : `적발 ${r.caught}/${r.total} · 잘못 지목 ${r.falseCount}명 · 민원 ${state.complaints}건`;
+  ctx.fillText(stats, px + 56, y);
+
+  // 명대사
+  y += 76;
+  ctx.fillStyle = K.muted;
+  ctx.font = `600 28px ${sans}`;
+  ctx.fillText('오늘의 명대사', px + 56, y);
+  y += 46;
+  ctx.fillStyle = K.ink;
+  ctx.font = `700 38px ${serif}`;
+  const quote = r.quote ? `“${r.quote.text}”` : '“……” (아무와도 말하지 않았다)';
+  wrapLines(ctx, quote, pw - 112).slice(0, 2).forEach((line) => {
+    ctx.fillText(line, px + 56, y);
+    y += 56;
+  });
+  if (r.quote) {
+    ctx.fillStyle = K.muted;
+    ctx.font = `500 30px ${sans}`;
+    ctx.fillText(`— ${label(student(state, r.quote.seat))} 수험생`, px + 56, y + 4);
+  }
+
+  // 하단
+  ctx.fillStyle = K.omrSoft;
+  ctx.fillRect(px, py + ph - 110, pw, 110);
+  ctx.fillStyle = K.ink;
+  ctx.font = `700 34px ${sans}`;
+  ctx.fillText('수능 감독관', px + 56, py + ph - 76);
+  ctx.fillStyle = K.muted;
+  ctx.font = `500 28px ${sans}`;
+  const tail = `같은 시험실 도전: 시험실 번호 ${state.room}`;
+  ctx.fillText(tail, px + pw - 56 - ctx.measureText(tail).width, py + ph - 72);
+
+  return canvas;
+}
+
+// ---- src/main.js
+// 화면 연결: 버튼, 캔버스, 일지, 결과
+
+
+
+
+const $ = (id) => document.getElementById(id);
+const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+let state = null;
+let selected = null;
+let seenLog = 0;
+let cardBlob = null;
+
+const ctx = $('scene').getContext('2d');
+
+function roomFromHash() {
+  const m = /room-(\d{4})/.exec(location.hash || '');
+  return m ? normalizeRoom(m[1]) : null;
+}
+
+function setHash(room) {
+  try { history.replaceState(null, '', `#room-${room}`); } catch (e) { location.hash = `room-${room}`; }
+}
+
+function start(room) {
+  state = newGame(room);
+  selected = null;
+  seenLog = 0;
+  setHash(room);
+  $('title').hidden = true;
+  $('game').hidden = false;
+  render();
+  window.scrollTo(0, 0);
+}
+
+function showTitle() {
+  $('title').hidden = false;
+  $('game').hidden = true;
+  const r = roomFromHash();
+  if (r) $('room-input').value = String(r);
+}
+
+// ---------- 렌더링 ----------
+
+function render() {
+  if (!state) return;
+  const p = PERIODS[state.period];
+  $('st-room').textContent = state.room;
+  $('st-period').textContent = state.phase === 'play' ? `${p.label} ${p.subject}` : state.phase === 'accuse' ? '감독 보고서' : '결과';
+  const pips = $('st-actions');
+  pips.innerHTML = '';
+  for (let i = 0; i < ACTIONS_PER_PERIOD; i++) {
+    const d = document.createElement('span');
+    d.className = 'pip' + (i < state.actionsLeft ? ' on' : '');
+    pips.appendChild(d);
+  }
+  pips.setAttribute('aria-label', `남은 행동 ${state.actionsLeft}번`);
+  $('st-inspect').textContent = `${state.inspectLeft}회`;
+  const comp = $('st-complaints');
+  comp.textContent = `${state.complaints}건`;
+  comp.classList.toggle('warn', state.complaints >= 4);
+
+  renderSeats();
+  $('play-panel').hidden = state.phase !== 'play';
+  $('accuse-panel').hidden = state.phase !== 'accuse';
+  $('result-panel').hidden = state.phase !== 'result';
+  if (state.phase === 'play') renderPlay();
+  if (state.phase === 'accuse') renderAccuse();
+  if (state.phase === 'result') renderResult();
+  renderLog();
+}
+
+function renderSeats() {
+  const row = $('seat-row');
+  row.innerHTML = '';
+  state.students.forEach((s) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'seat';
+    const pressed = state.phase === 'play' ? selected === s.seat : state.accused.includes(s.seat);
+    b.setAttribute('aria-pressed', String(pressed));
+    if (state.phase === 'result' && s.guilty) b.classList.add('guilty');
+    b.innerHTML = `<span class="bubble">${s.seat}</span><span class="nm">${s.name}</span>`;
+    b.setAttribute('aria-label', `${label(s)}${state.phase === 'accuse' ? ' 지목' : ' 선택'}`);
+    b.disabled = state.phase === 'result';
+    b.addEventListener('click', () => onSeat(s.seat));
+    row.appendChild(b);
+  });
+}
+
+function renderPlay() {
+  const info = $('sel-info');
+  if (selected) {
+    const s = student(state, selected);
+    const last = [...state.log].reverse().find((e) => e.seats && e.seats.length === 1 && e.seats[0] === selected && e.kind !== 'event');
+    info.innerHTML = `<span class="who">${label(s)}</span>` + (last ? `<br>${escapeHtml(last.kind === 'talk' ? `“${last.text}”` : last.text)}` : '<br>무엇을 할까?');
+  } else {
+    info.textContent = '위 그림이나 번호를 눌러 수험생을 고르세요.';
+  }
+  const can = selected && state.actionsLeft > 0;
+  $('btn-observe').disabled = !can;
+  $('btn-talk').disabled = !can;
+  $('btn-inspect').disabled = !can || state.inspectLeft < 1;
+  const p = PERIODS[state.period];
+  const next = $('btn-next');
+  next.textContent = state.period < PERIODS.length - 1 ? `${p.label} 종료 · 답안지 걷기` : '4교시 종료 · 보고서 쓰기';
+  next.classList.toggle('ready', state.actionsLeft === 0);
+}
+
+function renderAccuse() {
+  const n = state.accused.length;
+  $('btn-submit').textContent = n ? `${state.accused.join(', ')}번 부정행위로 보고` : '이상 없음으로 보고';
+}
+
+function renderResult() {
+  const r = state.result;
+  $('r-grade').textContent = r.grade;
+  $('r-title').textContent = r.title;
+  $('r-stats').textContent = r.total === 0
+    ? `부정행위자 없음 · 잘못 지목 ${r.falseCount}명 · 민원 ${state.complaints}건`
+    : `적발 ${r.caught}/${r.total} · 잘못 지목 ${r.falseCount}명 · 민원 ${state.complaints}건`;
+  const list = $('r-truth');
+  list.innerHTML = '';
+  state.students.forEach((s) => {
+    const t = truth(s);
+    const accused = state.accused.includes(s.seat);
+    const li = document.createElement('li');
+    li.className = t.guilty ? 'guilty' : 'innocent';
+    const verdict = t.guilty ? (accused ? '적발' : '놓침') : accused ? '잘못 지목' : '무고';
+    li.innerHTML = `<span class="no">${s.seat}</span><div><b>${s.name}</b><span class="verdict">${verdict}</span><p>${escapeHtml(t.text)}</p></div>`;
+    list.appendChild(li);
+  });
+  const q = $('r-quote');
+  if (r.quote) {
+    q.innerHTML = `“${escapeHtml(r.quote.text)}”<figcaption>오늘의 명대사 · ${escapeHtml(label(student(state, r.quote.seat)))} 수험생</figcaption>`;
+  } else {
+    q.innerHTML = '“……”<figcaption>오늘은 아무와도 말하지 않았다</figcaption>';
+  }
+  $('r-room').textContent = state.room;
+}
+
+function renderLog() {
+  const ol = $('log');
+  ol.innerHTML = '';
+  const entries = state.log.map((e, i) => ({ ...e, i })).reverse();
+  entries.forEach((e) => {
+    const li = document.createElement('li');
+    li.className = e.kind + (e.i >= seenLog ? ' fresh' : '');
+    const s = e.seats && e.seats.length === 1 ? student(state, e.seats[0]) : null;
+    if (e.kind === 'observe') li.innerHTML = `<span class="act">관찰</span><span class="who">${label(s)}</span>${escapeHtml(e.text)}`;
+    else if (e.kind === 'talk') li.innerHTML = `<span class="act">질문</span><span class="who">${label(s)}</span><span class="line">“${escapeHtml(e.text)}”</span>`;
+    else if (e.kind === 'inspect') li.innerHTML = `<span class="act">소지품 검사</span><span class="who">${label(s)}</span>${escapeHtml(e.text)}`;
+    else li.textContent = e.text;
+    ol.appendChild(li);
+  });
+  seenLog = state.log.length;
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// ---------- 입력 ----------
+
+function onSeat(seat) {
+  if (!state) return;
+  if (state.phase === 'play') selected = selected === seat ? null : seat;
+  else if (state.phase === 'accuse') toggleAccuse(state, seat);
+  render();
+}
+
+$('scene').addEventListener('click', (ev) => {
+  const rect = ev.currentTarget.getBoundingClientRect();
+  const x = ((ev.clientX - rect.left) / rect.width) * SCENE_W;
+  const y = ((ev.clientY - rect.top) / rect.height) * SCENE_H;
+  const seat = seatAt(x, y);
+  if (seat) onSeat(seat);
+});
+
+$('start-btn').addEventListener('click', () => {
+  const typed = normalizeRoom($('room-input').value);
+  start(typed || randomRoom());
+});
+$('room-input').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') $('start-btn').click(); });
+
+$('btn-observe').addEventListener('click', () => { if (selected) { observe(state, selected); render(); } });
+$('btn-talk').addEventListener('click', () => { if (selected) { talk(state, selected); render(); } });
+$('btn-inspect').addEventListener('click', () => { if (selected) { inspect(state, selected); render(); } });
+$('btn-next').addEventListener('click', () => {
+  endPeriod(state);
+  selected = null;
+  render();
+  if (state.phase === 'accuse') $('accuse-panel').scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
+});
+$('btn-submit').addEventListener('click', () => {
+  submitReport(state);
+  render();
+  $('result-panel').scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
+});
+$('btn-retry').addEventListener('click', () => start(state.room));
+$('btn-new').addEventListener('click', () => start(randomRoom()));
+
+$('btn-copy').addEventListener('click', async (ev) => {
+  const btn = ev.currentTarget;
+  try {
+    await navigator.clipboard.writeText(String(state.room));
+    btn.textContent = '복사됨';
+  } catch (e) {
+    btn.textContent = `번호: ${state.room}`;
+  }
+});
+
+$('btn-card').addEventListener('click', async () => {
+  try { await document.fonts.ready; } catch (e) { /* 글꼴 없이도 그린다 */ }
+  const canvas = renderCard(state);
+  $('card-img').src = canvas.toDataURL('image/png');
+  cardBlob = null;
+  canvas.toBlob((b) => { cardBlob = b; });
+  $('card-overlay').hidden = false;
+});
+$('btn-close-card').addEventListener('click', () => { $('card-overlay').hidden = true; });
+$('btn-share').addEventListener('click', async (ev) => {
+  const btn = ev.currentTarget;
+  const text = `수능 감독관 ${state.result.grade}등급 · ${state.result.title}. 시험실 ${state.room}에서 대결하자.`;
+  try {
+    const file = cardBlob ? new File([cardBlob], `suneung-${state.room}.png`, { type: 'image/png' }) : null;
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], text });
+      return;
+    }
+    if (navigator.share) { await navigator.share({ text }); return; }
+    throw new Error('share unavailable');
+  } catch (e) {
+    btn.textContent = '이미지를 길게 눌러 저장하세요';
+  }
+});
+
+// ---------- 애니메이션 ----------
+
+let lastDraw = 0;
+function frame(t) {
+  if (state && !$('game').hidden && t - lastDraw > 80) {
+    lastDraw = t;
+    drawScene(ctx, state, { t, selected: state.phase === 'play' ? selected : null, reduceMotion });
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---------- 시작 ----------
+
+function boot(data) {
+  if (data && data.state && data.state.v === 1) {
+    state = data.state;
+    selected = data.selected || null;
+    seenLog = state.log.length;
+    $('title').hidden = true;
+    $('game').hidden = false;
+    render();
+  } else {
+    showTitle();
+  }
+  requestAnimationFrame(frame);
+}
+
+const hot = window.claude && window.claude.hot;
+if (hot && hot.snapshot) hot.snapshot(() => ({ state, selected }));
+if (hot && hot.ready) hot.ready(boot);
+else boot(hot && hot.data ? hot.data : {});
+
+
+})();
+</script>

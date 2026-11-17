@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>수능 감독관</title>
+<meta name="description" content="수험생 다섯 명 중 부정행위자를 찾아내는 텍스트 추리 게임">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans+KR:wght@400;500;700&family=Nanum+Myeongjo:wght@700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- app:start -->
+<div class="app">
+  <section id="title" class="screen title">
+    <p class="eyebrow">11월 19일 · 대학수학능력시험</p>
+    <h1>수능 감독관</h1>
+    <p class="lede">당신이 맡은 구역의 수험생은 다섯 명. 이 중 누군가 부정행위를 하고 있다. 아무도 안 하고 있을 수도 있다.</p>
+    <ol class="rules">
+      <li>교시마다 행동은 <b>두 번</b>. 가까이 관찰하거나 말을 건다.</li>
+      <li>소지품 검사는 시험 전체에서 <b>단 한 번</b>.</li>
+      <li>말을 걸 때마다 <b>민원</b> 1건. 무고한 수험생을 검사하면 2건.</li>
+      <li>4교시가 끝나면 부정행위자를 지목해 보고한다.</li>
+    </ol>
+    <div class="room-field">
+      <label for="room-input">시험실 번호</label>
+      <input id="room-input" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="비워 두면 무작위">
+      <p class="hint">친구와 같은 번호를 넣으면 같은 판을 합니다.</p>
+    </div>
+    <button id="start-btn" class="btn primary" type="button">감독 시작</button>
+  </section>
+
+  <section id="game" class="screen" hidden>
+    <header class="status">
+      <div class="status-top">
+        <span class="room">시험실 <b id="st-room"></b></span>
+        <span class="period" id="st-period"></span>
+      </div>
+      <div class="meters">
+        <span class="meter">행동 <span id="st-actions" class="pips"></span></span>
+        <span class="meter">검사 <b id="st-inspect"></b></span>
+        <span class="meter">민원 <b id="st-complaints"></b></span>
+      </div>
+    </header>
+
+    <canvas id="scene" width="192" height="108" aria-label="시험실 장면. 수험생을 눌러 선택하세요."></canvas>
+
+    <div class="seat-row" id="seat-row" role="group" aria-label="수험생 선택"></div>
+
+    <div id="play-panel" class="panel">
+      <p id="sel-info" class="sel-info">위 그림이나 번호를 눌러 수험생을 고르세요.</p>
+      <div class="actions">
+        <button id="btn-observe" class="btn" type="button">가까이 관찰</button>
+        <button id="btn-talk" class="btn" type="button">말 걸기</button>
+        <button id="btn-inspect" class="btn" type="button">소지품 검사</button>
+      </div>
+      <button id="btn-next" class="btn next" type="button"></button>
+    </div>
+
+    <div id="accuse-panel" class="panel" hidden>
+      <p class="sel-info">부정행위자로 보고할 수험생의 번호를 칠하세요. 없다고 생각하면 아무것도 칠하지 말고 제출합니다.</p>
+      <button id="btn-submit" class="btn primary" type="button"></button>
+    </div>
+
+    <section id="result-panel" class="panel result" hidden>
+      <div class="grade-row">
+        <p class="grade"><span id="r-grade"></span><small>등급</small></p>
+        <div>
+          <p id="r-title" class="r-title"></p>
+          <p id="r-stats" class="r-stats"></p>
+        </div>
+      </div>
+      <ol id="r-truth" class="truth"></ol>
+      <figure id="r-quote" class="quote"></figure>
+      <div class="result-actions">
+        <button id="btn-card" class="btn primary" type="button">결과 카드 만들기</button>
+        <button id="btn-retry" class="btn" type="button">같은 시험실 다시</button>
+        <button id="btn-new" class="btn" type="button">새 시험실</button>
+      </div>
+      <p class="share-line">친구에게 시험실 번호 <b id="r-room"></b>을 알려 주면 같은 판으로 대결할 수 있어요. <button id="btn-copy" class="link-btn" type="button">번호 복사</button></p>
+    </section>
+
+    <section class="logbook">
+      <h2>감독 일지</h2>
+      <ol id="log"></ol>
+    </section>
+  </section>
+
+  <div id="card-overlay" class="overlay" hidden>
+    <div class="overlay-inner">
+      <img id="card-img" alt="감독 결과 카드">
+      <p class="hint">이미지를 길게 누르거나 오른쪽 클릭해서 저장하세요.</p>
+      <div class="overlay-actions">
+        <button id="btn-share" class="btn primary" type="button">공유하기</button>
+        <button id="btn-close-card" class="btn" type="button">닫기</button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- app:end -->
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

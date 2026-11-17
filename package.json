@@ -1,0 +1,12 @@
+{
+  "name": "suneung-gamdokgwan",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "수험생 다섯 명 중 부정행위자를 찾아내는 텍스트 추리 웹게임",
+  "scripts": {
+    "test": "node --test",
+    "bundle": "node scripts/bundle.mjs",
+    "serve": "python3 -m http.server 8000"
+  }
+}
