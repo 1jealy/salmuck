@@ -102,7 +102,7 @@ test('입실 점검은 30분을 넘지 않고 08:25 재난문자는 한 번만',
   finishPrecheck(s);
   assert.equal(s.log.filter((e) => e.kind === 'alert').length, 1);
   assert.equal(s.phase, 'exam');
-  assert.ok(s.students.every((x) => x.sticker));
+  assert.ok(s.students.every((x) => x.sticker === !!x.look.clothes.buttons), '단추 있는 옷만 스티커');
 });
 
 test('켜진 휴대폰은 재난문자로 시험 전에 예방된다', () => {
@@ -175,6 +175,18 @@ test('의심 표시가 없으면 쉬는 시간 단계 없이 바로 다음 교�
   }
   endExam(s);
   assert.equal(s.phase, 'result');
+});
+
+test('스티커 습관은 단추 있는 옷에만, 이어폰 수험생은 귀가 보이는 머리', () => {
+  for (const room of ROOMS) {
+    const s = newGame(room);
+    s.students.forEach((x) => {
+      if (x.habit === 'stickerItch' || x.habit === 'stickerFalls') assert.ok(x.look.clothes.buttons, `${room} ${x.seat}`);
+      if (x.scheme === 'earpiece') assert.ok(!['bob', 'long'].includes(x.look.hairStyle));
+      if (x.scheme === 'buttonCam') assert.equal(x.look.clothes.kind, 'shirt');
+      assert.ok(x.look.face && x.look.face.shape);
+    });
+  }
 });
 
 test('실수형 데이터 형식', () => {

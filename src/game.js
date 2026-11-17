@@ -92,6 +92,14 @@ export function newGame(room) {
       hairStyle: rng.pick(LOOKS.hairStyle),
       glasses: rng.chance(0.4),
       clothes: rng.pick(LOOKS.clothes),
+      face: {
+        shape: rng.pick(LOOKS.face.shape),
+        eye: rng.pick(LOOKS.face.eye),
+        brow: rng.pick(LOOKS.face.brow),
+        mouth: rng.pick(LOOKS.face.mouth),
+        nose: rng.pick(LOOKS.face.nose),
+        tilt: rng.int(-1, 1), // 눈썹·입의 좌우 비대칭
+      },
     },
     mole: rng.chance(0.3),
     watch: rng.chance(0.35) ? 'analog' : null,
@@ -116,6 +124,7 @@ export function newGame(room) {
     if (sc.needsGlasses) s.look.glasses = true;
     if (sc.clothes) s.look.clothes = LOOKS.clothes.find((c) => c.kind === sc.clothes);
     if (sc.watch) s.watch = sc.watch;
+    if (sc.earsVisible && ['bob', 'long'].includes(s.look.hairStyle)) s.look.hairStyle = 'short';
     if (key === 'proxy') s.mole = false; // 사진에는 점이 있고 얼굴에는 없다
   });
   if (rng.chance(0.6)) {
@@ -125,7 +134,7 @@ export function newGame(room) {
   }
   students.filter((s) => !s.scheme && !s.slip).forEach((s) => {
     if (!rng.chance(0.7)) return;
-    const options = Object.keys(HABITS).filter((k) => !HABITS[k].needsGlasses || s.look.glasses);
+    const options = Object.keys(HABITS).filter((k) => (!HABITS[k].needsGlasses || s.look.glasses) && (!HABITS[k].needsButtons || s.look.clothes.buttons));
     s.habit = rng.pick(options);
     if (HABITS[s.habit].watch) s.watch = HABITS[s.habit].watch;
   });
@@ -307,7 +316,7 @@ export function canPrecheck(state, kind, seat) {
   return !s.checked[kind];
 }
 
-const PRECHECK_CAPTION = { id: '사진 대조', clothes: '소매 걷기 · 단추 스티커', glasses: '안경 벗겨 보기', pockets: '소지품 꺼내 보기' };
+const PRECHECK_CAPTION = { id: '사진 대조', clothes: '소매·옷깃 확인 · 단추 스티커', glasses: '안경 벗겨 보기', pockets: '소지품 꺼내 보기' };
 
 export function precheck(state, kind, seat) {
   if (!canPrecheck(state, kind, seat)) return false;
@@ -328,7 +337,7 @@ export function precheck(state, kind, seat) {
   } else {
     const s = student(state, seat);
     s.checked[kind] = true;
-    if (kind === 'clothes') s.sticker = true;
+    if (kind === 'clothes') s.sticker = !!s.look.clothes.buttons;
     const view = makeView(state, s, rng, { id: kind === 'id', sleeves: kind === 'clothes', glassesOff: kind === 'glasses', pockets: kind === 'pockets' });
     log(state, 'view', PRECHECK_CAPTION[kind], seat, view);
     const slip = s.slip && !s.slipState ? SLIPS[s.slip] : null;
@@ -365,9 +374,9 @@ export function finishPrecheck(state) {
   if (state.phase !== 'precheck' || busy(state)) return;
   state.minutes = PRECHECK.minutes;
   maybeAlert(state);
-  const rest = state.students.filter((s) => !s.checked.clothes);
+  const rest = state.students.filter((s) => !s.checked.clothes && s.look.clothes.buttons);
   rest.forEach((s) => { s.sticker = true; });
-  if (rest.length) log(state, 'system', `부감독관이 나머지 ${rest.length}명에게 스티커만 붙였다.`);
+  if (rest.length) log(state, 'system', `부감독관이 단추 있는 옷을 입은 나머지 ${rest.length}명에게 스티커만 붙였다.`);
   state.actionIndex += 1;
   startExam(state);
 }

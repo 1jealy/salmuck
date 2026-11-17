@@ -124,6 +124,7 @@ export const SCHEMES = {
     reveal: '지급 사인펜과 닮은 카메라 펜으로 바꿔치기했다. 확대 그림: 지급 펜의 흰 띠가 없고 뚜껑 끝에 검은 점이 있었다.',
   },
   earpiece: {
+    earsVisible: true, // 귀를 덮는 머리 모양이면 단서가 안 보이므로 짧은 머리로 바꾼다
     name: '쌀알 크기 이어폰',
     detect: 0.5,
     pose: 'ear',
@@ -175,8 +176,8 @@ export const SCHEMES = {
 // ---------- 무고한 수험생의 습관: 계획형 단서와 겹치게 만든다 ----------
 export const HABITS = {
   touchGlasses: { needsGlasses: true, pose: 'glasses', line: '{n}번, 안경을 고쳐 쓴다' },
-  stickerItch: { peeled: true, line: '{n}번, 단추 스티커를 긁는다' },
-  stickerFalls: { falls: true, line: '{n}번, 단추 스티커가 떨어졌다' },
+  stickerItch: { needsButtons: true, peeled: true, line: '{n}번, 단추 스티커를 긁는다' },
+  stickerFalls: { needsButtons: true, falls: true, line: '{n}번, 단추 스티커가 떨어졌다' },
   mentalMath: { blank: true, line: '{n}번, 펜을 거의 안 움직인다' },
   earTouch: { pose: 'ear', line: '{n}번, 귀를 만진다' },
   earCover: { pose: 'ear', period: 2, line: '듣기평가 중 {n}번, 한쪽 귀를 막고 있다' },
@@ -208,13 +209,22 @@ export const LOOKS = {
   hair: ['#1d1917', '#2e231d', '#3d2a1f', '#4a3326'],
   hairStyle: ['short', 'buzz', 'long', 'bob', 'fluffy', 'ponytail'],
   clothes: [
-    { body: '#2b3a5e', trim: '#e9ecef', kind: 'uniform' },
-    { body: '#6b2f3b', trim: '#e9ecef', kind: 'uniform' },
-    { body: '#757b84', trim: '#5f646c', kind: 'hoodie' },
-    { body: '#3e5a4b', trim: '#30473b', kind: 'hoodie' },
-    { body: '#28282d', trim: '#46464f', kind: 'padding' },
-    { body: '#a59a86', trim: '#8b806d', kind: 'padding' },
-    { body: '#e2e0d8', trim: '#9aa0a6', kind: 'shirt' },
-    { body: '#9fb6d6', trim: '#6f87a8', kind: 'shirt' },
+    // buttons: 단추가 있는 옷만 단추 스티커를 붙인다
+    { body: '#2b3a5e', trim: '#e9ecef', kind: 'uniform', buttons: true },
+    { body: '#6b2f3b', trim: '#e9ecef', kind: 'uniform', buttons: true },
+    { body: '#757b84', trim: '#5f646c', kind: 'hoodie', buttons: false },
+    { body: '#3e5a4b', trim: '#30473b', kind: 'hoodie', buttons: false },
+    { body: '#28282d', trim: '#46464f', kind: 'padding', buttons: false },
+    { body: '#a59a86', trim: '#8b806d', kind: 'padding', buttons: false },
+    { body: '#e2e0d8', trim: '#9aa0a6', kind: 'shirt', buttons: true },
+    { body: '#9fb6d6', trim: '#6f87a8', kind: 'shirt', buttons: true },
   ],
+  // 얼굴 변형: 학생마다 하나씩 골라 복제된 느낌을 없앤다
+  face: {
+    shape: ['oval', 'round', 'square', 'narrow'],
+    eye: ['round', 'narrow', 'droopy', 'sharp'],
+    brow: ['straight', 'arch', 'thick', 'thin'],
+    mouth: ['normal', 'wide', 'small'],
+    nose: ['small', 'long'],
+  },
 };
