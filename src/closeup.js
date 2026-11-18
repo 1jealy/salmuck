@@ -38,7 +38,7 @@ const C = {
   ink: '#1b1820', white: '#ffffff', iris: '#2a2230', mouth: '#8a3e36', lip: '#c86a5c', blush: '#f19a8a',
   tear: '#79c4ff', sweat: '#a9dcff', mole: '#5a3020',
   frame: '#1e1c24', lensHi: '#d8eef6', lens: '#7fe8ff', camera: '#25252c',
-  stickerOut: '#b8901c', sticker: '#ffe45c', stickerHi: '#fff6b4', stickerBack: '#ffffff',
+  stickerOut: '#c9bd8e', sticker: '#f3ecc8', stickerHi: '#fffbe8', stickerBack: '#ffffff',
   button: '#1c1c22', buttonHi: '#5c5c68', shine: '#c9e4ff',
   paper: '#f7f7f2', paperEdge: '#c9cbc2', print: '#c6cad0', pencil: '#4f5965',
   omr: '#f6cdd7', omrLine: '#e48aa2', omrEdge: '#c96f86', mark: '#1a1a20',
@@ -177,13 +177,15 @@ function hairFront(r, p, style) {
       break;
     }
     case 'bob':
-    case 'long':
-      cap(ell(80, 26, 22, 17), 22);
+    case 'long': {
+      // 얼굴을 감싸는 하나의 매끄러운 덩어리: 바깥 타원에서 얼굴 창(턱선을 따라가는 타원)을 뺀다
+      const outer = ell(80, 31, 23, style === 'bob' ? 21 : 24);
+      const faceWin = (x, y) => y >= 22 && ((x + 0.5 - 80) / 18.5) ** 2 + ((y + 0.5 - 37) / 21) ** 2 <= 1;
+      const bottom = style === 'bob' ? 49 : 54;
+      r.fill(p, 54, 6, 106, bottom, (x, y) => outer(x, y) && !faceWin(x, y) && y <= bottom);
       fringe(21, 6);
-      // 옆머리가 귀 자리까지 덮는다
-      r.round(p, 55, 22, 8, style === 'bob' ? 28 : 22, 3);
-      r.round(p, 97, 22, 8, style === 'bob' ? 28 : 22, 3);
       break;
+    }
     case 'ponytail':
       cap(ell(80, 26, 22, 17), 22);
       fringe(21, 6);
@@ -272,7 +274,7 @@ function glassesOnFace(ctx, g) {
 // 단추는 옷 종류마다 따로. 후드·패딩에는 단추가 없다(지퍼).
 const BUTTONS = {
   uniform: [[81, 83], [81, 91]],
-  shirt: [[80, 69], [80, 76], [80, 83], [80, 90]],
+  shirt: [[80, 71], [80, 77], [80, 83], [80, 89]],
 };
 
 function zipper(ctx, ramp, y0, y1) {
@@ -308,16 +310,20 @@ function clothesDetail(ctx, v, cl, ramp) {
     line(ctx, 68, 61, 78, 79, ramp[3]);
     line(ctx, 80, 79, 80, 97, ramp[0]);
   } else if (cl.kind === 'shirt') {
-    // 뾰족한 칼라(좌우 대칭으로 찍는다)와 단추 여밈
-    const wing = [[68, 'ooo'], [68, 'olllo'], [69, 'ollllo'], [70, 'olllo'], [72, 'ollo'], [74, 'oo']];
-    const colCollar = { o: ramp[0], l: ramp[4] };
-    wing.forEach(([x, row], i) => {
-      stamp(ctx, x, 58 + i, [row], colCollar);
-      stamp(ctx, 160 - x - row.length, 58 + i, [[...row].reverse().join('')], colCollar);
-    });
-    px(ctx, 78, 64, 1, 34, ramp[1]);
-    px(ctx, 79, 64, 3, 34, ramp[3]);
-    px(ctx, 82, 64, 1, 34, ramp[1]);
+    // V자 와이셔츠 깃: 목 양옆에서 가운데로 내려오는 두 개의 삼각형
+    for (let i = 0; i <= 7; i++) {
+      const y = 59 + i;
+      px(ctx, 71 + i, y, Math.max(1, 6 - i), 1, ramp[4]);
+      px(ctx, 89 - i - Math.max(1, 6 - i) + 1, y, Math.max(1, 6 - i), 1, ramp[4]);
+    }
+    line(ctx, 70, 59, 79, 67, ramp[0]);
+    line(ctx, 90, 59, 81, 67, ramp[0]);
+    line(ctx, 70, 59, 72, 65, ramp[0]);
+    line(ctx, 90, 59, 88, 65, ramp[0]);
+    line(ctx, 72, 65, 79, 67, ramp[1]);
+    line(ctx, 88, 65, 81, 67, ramp[1]);
+    px(ctx, 80, 67, 1, 31, ramp[1]);
+    px(ctx, 81, 67, 1, 31, ramp[3]);
   } else if (cl.kind === 'hoodie') {
     zipper(ctx, ramp, 63, 98);
     // 끈
@@ -348,55 +354,51 @@ function buttons(ctx, v, kind) {
     const big = v.bigButton && i === 1;
     if (big) stamp(ctx, x - 3, y - 3, ['.bbbb.', 'bhbbbb', 'bbbbbb', 'bbbbsb', 'bbbbbb', '.bbbb.'], { b: C.button, h: C.buttonHi, s: C.shine });
     else if (kind === 'uniform') stamp(ctx, x - 1, y - 1, ['.g.', 'ghg', '.o.'], { g: '#c9a227', h: '#f3d870', o: '#7a5f10' });
-    else stamp(ctx, x - 1, y - 1, ['.w.', 'wgw', '.w.'], { w: '#f4f4f0', g: '#a9aeb6' });
+    else stamp(ctx, x, y, ['wg', 'gg'], { w: '#fbfbf7', g: '#c4c8ce' });
     const missing = v.sticker === 'missing' && i === 1;
     if (v.sticker === 'none' || missing) return;
     const peeled = v.sticker === 'peeled' && i === list.length - 1;
-    stamp(ctx, x - 2, y - 2, peeled
-      ? ['ohhhw', 'ossww', 'osssw', 'ossso', '.ooo.']
-      : ['.hhh.', 'hsssh', 'sssss', 'ossso', '.ooo.'], { o: C.stickerOut, s: C.sticker, h: C.stickerHi, w: C.stickerBack });
+    stamp(ctx, x - 1, y - 1, peeled
+      ? ['shhw', 'sssw', 'ssss', 'oooo']
+      : ['hhhs', 'hsss', 'ssss', 'oooo'], { o: C.stickerOut, s: C.sticker, h: C.stickerHi, w: C.stickerBack });
   });
 }
 
 // ---------- 손목시계, 사인펜, 책상 물건 ----------
-function watch(ctx, w, x, y) {
-  px(ctx, x - 1, y + 2, 13, 7, C.strap);
-  px(ctx, x - 1, y + 2, 13, 1, C.strapHi);
+// 손목 위 작은 시계 (손목 두께 안)
+function watchSmall(ctx, w, x, y) {
+  px(ctx, x - 1, y + 1, 7, 2, C.strap);
+  if (w.type === 'digital') stamp(ctx, x, y, ['kkkkk', 'kgggk', 'kkkkk'], { k: '#3a3a42', g: C.seg });
+  else stamp(ctx, x, y, ['.bbb.', 'bfffb', '.bbb.'], { b: C.bezel, f: C.face });
+}
+
+// 시계 확대 창: 위장 스마트워치 단서(바늘이 지금 시각과 다름)는 여기서 본다
+function watchInset(ctx, w) {
+  const x = 4;
+  const y = 60;
+  panel(ctx, x - 1, y - 1, 25, 25);
+  const cx = x + 11;
+  const cy = y + 11;
   if (w.type === 'digital') {
-    stamp(ctx, x, y, [
-      'kkkkkkkkkkk',
-      'kllllllllll',
-      'klgg.l.gglk',
-      'klg.glg.glk',
-      'klgg.l.gglk',
-      'kllllllllll',
-      'kkkkkkkkkkk',
-    ].map((r) => r.padEnd(11, 'k')), { k: '#3a3a42', l: C.lcd, g: C.seg });
+    px(ctx, x + 3, y + 6, 17, 11, '#3a3a42');
+    px(ctx, x + 4, y + 7, 15, 9, C.lcd);
+    stamp(ctx, x + 5, y + 9, ['gg.g.gg', 'g..g..g', 'gg.g.gg'].map((r) => r), { g: C.seg });
     return;
   }
-  stamp(ctx, x, y - 1, [
-    '...bbbbb...',
-    '.bbfffffbb.',
-    '.bfffffffb.',
-    'bfffffffffb',
-    'bfffffffffb',
-    'bfffffffffb',
-    'bfffffffffb',
-    'bfffffffffb',
-    '.bfffffffb.',
-    '.bbfffffbb.',
-    '...bbbbb...',
-  ], { b: C.bezel, f: C.face });
-  const cx = x + 5;
-  const cy = y + 4;
+  for (let yy = -9; yy <= 9; yy++) {
+    for (let xx = -9; xx <= 9; xx++) {
+      const d = xx * xx + yy * yy;
+      if (d <= 81) px(ctx, cx + xx, cy + yy, 1, 1, d > 64 ? C.bezel : C.face);
+    }
+  }
   [0, 3, 6, 9].forEach((k) => {
     const a = (k / 12) * Math.PI * 2;
-    px(ctx, cx + Math.round(Math.sin(a) * 4), cy - Math.round(Math.cos(a) * 4), 1, 1, C.tick);
+    px(ctx, cx + Math.round(Math.sin(a) * 7), cy - Math.round(Math.cos(a) * 7), 1, 1, C.tick);
   });
   const ma = (w.m / 60) * Math.PI * 2;
   const ha = (((w.h % 12) + w.m / 60) / 12) * Math.PI * 2;
-  for (let r = 0; r <= 4; r++) px(ctx, cx + Math.round(Math.sin(ma) * r), cy - Math.round(Math.cos(ma) * r), 1, 1, C.hand);
-  for (let r = 0; r <= 2; r++) px(ctx, cx + Math.round(Math.sin(ha) * r), cy - Math.round(Math.cos(ha) * r), 1, 1, C.handR);
+  for (let r = 0; r <= 7; r++) px(ctx, cx + Math.round(Math.sin(ma) * r), cy - Math.round(Math.cos(ma) * r), 1, 1, C.hand);
+  for (let r = 0; r <= 4; r++) px(ctx, cx + Math.round(Math.sin(ha) * r), cy - Math.round(Math.cos(ha) * r), 1, 1, C.handR);
 }
 
 function pen(ctx, fake, x, y, vertical) {
@@ -631,8 +633,8 @@ function bodyTemplate(pose, sleeves, waist, kind, shape, earsHidden) {
     // 귀: 작게, 머리 옆에 살짝만 보인다
     if (!earsHidden) {
       const pEars = r.part(skin);
-      r.ellipse(pEars, 59, 38, 3, 5);
-      r.ellipse(pEars, 101, 38, 3, 5);
+      r.ellipse(pEars, 60, 38, 2, 4.5);
+      r.ellipse(pEars, 100, 38, 2, 4.5);
     }
     // 머리: 얼굴형에 따라 턱 모양이 다르다
     const fs = FACE_SHAPE[shape] || FACE_SHAPE.oval;
@@ -647,16 +649,6 @@ function bodyTemplate(pose, sleeves, waist, kind, shape, earsHidden) {
     const pDesk = r.part(WOOD.map((_, i) => `W${i}`), { flat: true });
     r.rect(pDesk, 0, 96, CLOSE_W, 24);
     const fore = sleeves ? skin : cloth;
-    // 배 잡기: 양손으로 배를 감싸고 몸을 웅크린다
-    if (pose === 'belly') {
-      const pForeL = r.part(fore);
-      capsule(r, pForeL, 47, 92, 70, 86, 4.8);
-      const pForeR = r.part(fore);
-      capsule(r, pForeR, 113, 92, 90, 86, 4.8);
-      const pHands = r.part(skin, { shine: true });
-      r.ellipse(pHands, 74, 85, 6, 4.5);
-      r.ellipse(pHands, 86, 86, 6, 4.5);
-    }
   });
 }
 
@@ -690,19 +682,32 @@ function armsTemplate(pose, sleeves) {
 // 팔꿈치는 가슴 옆, 아래팔은 얼굴 쪽으로 비스듬히, 손목에서 한 번 꺾여 손가락 끝이 안경테/귀에 닿는다.
 function raisedArmTemplate(pose, sleeves) {
   return template(`raised|${pose}|${sleeves}`, (r) => {
+    if (pose === 'belly') {
+      // 배 잡기: 양 아래팔이 몸 앞을 가로질러 손이 배를 감싼다 (옷 무늬 위에 그려 윤곽이 묻히지 않게)
+      const fore = sleeves ? SLOT('K') : SLOT('C');
+      const pForeL = r.part(fore);
+      capsule(r, pForeL, 48, 93, 69, 87, 4.6);
+      const pForeR = r.part(fore);
+      capsule(r, pForeR, 112, 93, 91, 87, 4.6);
+      const pHands = r.part(SLOT('K'), { shine: true });
+      r.ellipse(pHands, 74, 86, 5.5, 4.2);
+      const pHand2 = r.part(SLOT('K'), { shine: true });
+      r.ellipse(pHand2, 86, 87, 5.5, 4.2);
+      return;
+    }
     if (pose !== 'glasses' && pose !== 'ear') return;
     const ear = pose === 'ear';
     const fore = sleeves ? SLOT('K') : SLOT('C');
     const skin = SLOT('K');
     const elbow = [115, 90];
-    const wrist = ear ? [111, 54] : [109, 52];
+    const wrist = ear ? [113, 57] : [109, 52];
     const pFore = r.part(fore);
     capsule(r, pFore, elbow[0], elbow[1], wrist[0], wrist[1], 4.5);
     if (!sleeves) { const pCuff = r.part(SLOT('C')); r.ellipse(pCuff, wrist[0], wrist[1] + 1, 5, 3); }
     const pHand = r.part(skin, { shine: true });
-    const palm = ear ? [107, 45] : [104, 43];
+    const palm = ear ? [108, 47] : [104, 43];
     capsule(r, pHand, wrist[0], wrist[1] - 2, palm[0], palm[1], 4);
-    const tips = ear ? [[103, 37], [102, 40], [103, 43]] : [[98, 31], [97, 34], [98, 37], [100, 40]];
+    const tips = ear ? [[102, 36], [101, 39], [101, 42], [102, 45]] : [[98, 31], [97, 34], [98, 37], [100, 40]];
     tips.forEach(([tx, ty], i) => capsule(r, pHand, palm[0] - 1, palm[1] - 3 + i * 1.5, tx, ty, 1.1));
   });
 }
@@ -743,7 +748,6 @@ export function drawCloseup(ctx, v) {
   const shape = (look.face && look.face.shape) || 'oval';
   paint(ctx, bodyTemplate(pose, !!v.sleeves, !!v.waist, cl.kind, shape, earsHidden), colors);
   paint(ctx, hairTemplate(look.hairStyle, false), colors);
-  paint(ctx, raisedArmTemplate(pose, !!v.sleeves), colors);
   // 팔과 몸통 사이 주름(겨드랑이에서 팔꿈치까지)
   const crease = (x0, x1) => { line(ctx, x0, 77, x1, 95, cloth[1]); line(ctx, x0 + (x1 > x0 ? 1 : -1), 79, x1 + (x1 > x0 ? 1 : -1), 95, cloth[3]); };
   if (pose !== 'belly' && cl.kind !== 'padding') crease(55, 54);
@@ -756,10 +760,10 @@ export function drawCloseup(ctx, v) {
 
   // 귓구멍과 이어폰
   if (!earsHidden) {
-    px(ctx, 102, 36, 1, 4, C.canal);
-    px(ctx, 101, 35, 1, 1, skin[1]);
-    px(ctx, 58, 36, 1, 4, skin[1]);
-    if (v.earBlob && pose !== 'ear') stamp(ctx, 102, 36, ['w', 'b', 'b'], { b: C.blob, w: C.white });
+    px(ctx, 101, 37, 1, 3, C.canal);
+    px(ctx, 59, 37, 1, 3, skin[1]);
+    // 이어폰: 귓구멍에서 살짝 나온 둥근 알 (외곽선 + 하이라이트로 노이즈가 아닌 물체로 보이게)
+    if (v.earBlob && pose !== 'ear') stamp(ctx, 100, 36, ['.oo.', 'obwo', 'obbo', '.oo.'], { o: '#8a5a44', b: C.blob, w: C.white });
   }
 
   clothesDetail(ctx, v, cl, cloth);
@@ -774,6 +778,14 @@ export function drawCloseup(ctx, v) {
   buttons(ctx, v, cl.kind);
   face(ctx, v, skin, hair);
   if (v.glasses && !v.glasses.off) glassesOnFace(ctx, v.glasses);
+  paint(ctx, raisedArmTemplate(pose, !!v.sleeves), colors);
+  if (pose === 'belly') {
+    // 팔 아래 그림자로 몸통과 분리
+    line(ctx, 50, 98, 69, 92, cloth[0]);
+    line(ctx, 110, 98, 91, 92, cloth[0]);
+    [72, 74, 76].forEach((x) => px(ctx, x, 87, 1, 2, skin[1]));
+    [84, 86, 88].forEach((x) => px(ctx, x, 88, 1, 2, skin[1]));
+  }
 
   desk(ctx, v);
   paint(ctx, armsTemplate(pose, !!v.sleeves), colors);
@@ -782,8 +794,9 @@ export function drawCloseup(ctx, v) {
     [60, 63, 66].forEach((x) => px(ctx, x, 106, 1, 2, skin[1]));
   }
   if (pose === 'desk' || pose === 'tap') [94, 97, 100].forEach((x) => px(ctx, x, 106, 1, 2, skin[1]));
-  if (v.watch && pose !== 'belly') watch(ctx, v.watch, 49, 96);
-  else if (v.watch) watch(ctx, v.watch, 52, 83);
+  if (v.watch && pose !== 'belly') watchSmall(ctx, v.watch, 52, 99);
+  else if (v.watch) watchSmall(ctx, v.watch, 58, 90);
+  if (v.watch) watchInset(ctx, v.watch);
   if (v.paper !== 'none') {
     if (pose === 'penUp') pen(ctx, v.fakePen, 106, 79, true);
     else pen(ctx, v.fakePen, 74, 113, false);
