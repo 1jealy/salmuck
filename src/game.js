@@ -1,6 +1,6 @@
 // 게임 규칙. 화면과 분리된 순수 로직. 상태는 평범한 JSON 객체다.
 // 관찰 결과는 글이 아니라 "그림 상태(view)"로 남긴다. pixel.js가 그것을 확대 그림으로 그린다.
-import { SEATS, PERIODS, PRECHECK, BUDGET, SURNAMES, GIVEN_NAMES, SLIPS, SCHEMES, HABITS, PROTEST, AMBIENT, LOOKS } from './data.js';
+import { SEATS, PERIODS, PRECHECK, BUDGET, SWAP_TIMING, SURNAMES, GIVEN_NAMES, SLIPS, SCHEMES, HABITS, PROTEST, AMBIENT, LOOKS } from './data.js';
 
 // ---------- 난수 ----------
 export function makeRng(seed) {
@@ -124,6 +124,7 @@ export function newGame(room) {
     if (sc.needsGlasses) s.look.glasses = true;
     if (sc.clothes) s.look.clothes = LOOKS.clothes.find((c) => c.kind === sc.clothes);
     if (sc.watch) s.watch = sc.watch;
+    if (sc.swap) s.swapAt = rng.pick(SWAP_TIMING).at;
     if (sc.earsVisible && ['bob', 'long'].includes(s.look.hairStyle)) s.look.hairStyle = 'short';
     if (key === 'proxy') s.mole = false; // 사진에는 점이 있고 얼굴에는 없다
   });
@@ -153,7 +154,8 @@ export function newGame(room) {
     }
     if (s.scheme) {
       const t = SCHEMES[s.scheme].tells;
-      rng.shuffle(t.periods).slice(0, rng.int(t.count[0], t.count[1])).forEach((p) => {
+      const allowed = s.swapAt != null ? [0, 1, 2, 3].filter((p) => p >= s.swapAt) : t.periods;
+      rng.shuffle(allowed).slice(0, rng.int(t.count[0], t.count[1])).forEach((p) => {
         schedule[p].push({ kind: t.sticker ? 'sticker' : 'tell', seat: s.seat, text: fill(rng.pick(t.lines), s.seat) });
       });
       if (t.extra) schedule[t.extra.period].push({ kind: 'tell', seat: s.seat, text: fill(t.extra.text, s.seat) });
@@ -177,6 +179,7 @@ export function newGame(room) {
     idLeft: 0,
     patrolLeft: BUDGET.patrol,
     afterLeft: BUDGET.afterCheck,
+    scanLeft: BUDGET.scan,
     complaints: 0,
     actionIndex: 0,
     students,
@@ -204,7 +207,7 @@ function busy(state) {
 
 function schemeActive(s, period, phase) {
   if (!s.scheme || phase === 'precheck') return false;
-  if (s.scheme === 'aiGlasses') return period > SCHEMES.aiGlasses.swapAfter;
+  if (s.swapAt != null) return period >= s.swapAt;
   return true;
 }
 
@@ -255,7 +258,7 @@ export function makeView(state, s, rng, mode = {}) {
     pose,
     faceMole: s.mole,
     glasses: s.look.glasses
-      ? { thick: s.scheme === 'aiGlasses' && active, glint: s.scheme === 'aiGlasses' && active && rng.chance(0.6), off: !!mode.glassesOff }
+      ? { thick: s.scheme === 'aiGlasses' && active, glint: s.scheme === 'aiGlasses' && active && rng.chance(0.5), leak: s.scheme === 'aiGlasses' && active && rng.chance(0.45), off: !!mode.glassesOff }
       : null,
     sticker,
     bigButton: s.scheme === 'buttonCam',
@@ -428,7 +431,49 @@ export function patrol(state, seat) {
     return true;
   }
   log(state, 'view', '가까이 봄', seat, view);
+  // 가까이 지나갈 때 들리는 작은 전자음 (국가기술자격시험 적발 징후)
+  if (s.scheme === 'aiGlasses' && schemeActive(s, state.period, state.phase) && rng.chance(0.35)) {
+    log(state, 'sound', '지나가는 순간 아주 작은 "삐" 소리가 들렸다.', seat);
+  }
   return true;
+}
+
+// ---------- AI 인스펙터: 블루투스 탐지 앱 ----------
+// 고른 수험생 근처의 신호 세기를 잰다. 옆자리 장비의 신호가 섞일 수 있어 확정 증거는 아니다.
+export function canScan(state, seat) {
+  return state.phase === 'exam' && !busy(state) && state.scanLeft > 0 && !!student(state, seat);
+}
+
+function emitting(s, state) {
+  return !!(s.scheme && SCHEMES[s.scheme].wireless && schemeActive(s, state.period, state.phase));
+}
+
+function neighbors(seat) {
+  const row = Math.floor((seat - 1) / 4);
+  const col = (seat - 1) % 4;
+  return [[row, col - 1], [row, col + 1], [row - 1, col], [row + 1, col]]
+    .filter(([r, c]) => r >= 0 && r < 3 && c >= 0 && c < 4)
+    .map(([r, c]) => r * 4 + c + 1);
+}
+
+export function scan(state, seat) {
+  if (!canScan(state, seat)) return false;
+  const s = student(state, seat);
+  const rng = rngFor(state, 5);
+  state.scanLeft -= 1;
+  state.actionIndex += 1;
+  const near = neighbors(seat).some((n) => emitting(student(state, n), state));
+  let level;
+  if (emitting(s, state)) level = rng.chance(0.85) ? 'strong' : 'weak';
+  else if (near) level = rng.chance(0.6) ? 'weak' : 'none';
+  else level = rng.chance(0.08) ? 'weak' : 'none';
+  const text = {
+    strong: '블루투스 탐지: 신호가 강하다. 이 자리 바로 근처에서 나오는 신호다.',
+    weak: '블루투스 탐지: 약한 신호가 잡힌다. 이 자리인지 옆자리인지 확실하지 않다.',
+    none: '블루투스 탐지: 잡히는 신호가 없다.',
+  }[level];
+  log(state, 'scan', text, seat);
+  return level;
 }
 
 export function endExam(state) {
@@ -572,7 +617,10 @@ export function submitReport(state) {
 }
 
 export function truth(s) {
-  if (s.scheme) return { tag: '계획형', name: SCHEMES[s.scheme].name, text: SCHEMES[s.scheme].reveal };
+  if (s.scheme) {
+    const swap = s.swapAt != null ? `${SWAP_TIMING.find((t) => t.at === s.swapAt).label}에` : '';
+    return { tag: '계획형', name: SCHEMES[s.scheme].name, text: SCHEMES[s.scheme].reveal.replace('{swap}', swap) };
+  }
   if (s.slip) return { tag: '실수형', name: SLIPS[s.slip].name, text: SLIPS[s.slip].reveal };
   return { tag: '무고', name: '', text: s.habit ? '수상해 보인 행동은 그냥 습관이었다.' : '아무 문제 없이 시험을 봤다.' };
 }

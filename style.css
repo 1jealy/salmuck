@@ -279,3 +279,8 @@ input::placeholder { color: #6c737c; font-size: 17px; letter-spacing: 0; }
 .insets figure { margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .insets canvas { image-rendering: pixelated; border: 2px solid var(--line); background: #000; }
 .insets figcaption { font-size: 14px; color: var(--dim); }
+
+.v-caption.k-scan { color: #7fe8ff; }
+.v-caption.k-sound { color: var(--orange); }
+.k-scan { color: #7fe8ff; }
+.k-sound { color: var(--orange); }

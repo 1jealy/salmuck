@@ -1,6 +1,6 @@
 // 화면 연결: 교실 그림 → 확대 그림 → 행동 → 수첩(스냅숏 앨범)
 import { PERIODS, PRECHECK } from './data.js';
-import { newGame, precheck, canPrecheck, finishPrecheck, idCheck, canIdCheck, suspects, patrol, canPatrol, endExam, afterCheck, canAfterCheck, nextPeriod, resolvePending, toggleFlag, submitReport, truth, outcome, student, label, clockText, snapshots, normalizeRoom, randomRoom } from './game.js';
+import { newGame, precheck, canPrecheck, finishPrecheck, idCheck, canIdCheck, suspects, patrol, canPatrol, scan, canScan, endExam, afterCheck, canAfterCheck, nextPeriod, resolvePending, toggleFlag, submitReport, truth, outcome, student, label, clockText, snapshots, normalizeRoom, randomRoom } from './game.js';
 import { drawScene, seatAt, SCENE_W, SCENE_H } from './pixel.js';
 import { drawCloseup, insetsFor, drawInset, CLOSE_W, CLOSE_H } from './closeup.js';
 import { renderCard } from './card.js';
@@ -56,7 +56,7 @@ function phaseName() {
 function budgetText() {
   switch (state.phase) {
     case 'precheck': return `남은 ${PRECHECK.minutes - state.minutes}분`;
-    case 'exam': return state.period > 0 ? `확인 ${state.idLeft} · 보기 ${state.patrolLeft}` : `보기 ${state.patrolLeft}`;
+    case 'exam': return `${state.period > 0 ? `확인 ${state.idLeft} · ` : ''}보기 ${state.patrolLeft} · 탐지 ${state.scanLeft}`;
     case 'break': return '쉬는 시간';
     default: return '';
   }
@@ -180,6 +180,7 @@ function renderActions() {
   } else if (state.phase === 'exam') {
     if (s) {
       btn(box, '가까이 보기', `${state.patrolLeft}회 남음`, () => act(() => patrol(state, s.seat)), { disabled: !canPatrol(state, s.seat) });
+      btn(box, '블루투스 탐지', `AI 인스펙터 앱 · ${state.scanLeft}회`, () => act(() => scan(state, s.seat)), { disabled: !canScan(state, s.seat) });
       if (state.period > 0) btn(box, '본인 확인', `${state.idLeft}회 · 사진${state.period <= 2 ? '·소매' : ''}${state.period === 2 ? '·소지품' : ''}`, () => act(() => idCheck(state, s.seat)), { disabled: !canIdCheck(state, s.seat) });
       flag();
     }
@@ -283,7 +284,7 @@ function act(fn) {
     const shots = snapshots(state, selected);
     viewing = shots.length ? state.log.indexOf(shots[shots.length - 1]) : null;
   }
-  const important = fresh.filter((e) => ['found', 'caught', 'clean', 'prevent', 'decision'].includes(e.kind)).pop();
+  const important = fresh.filter((e) => ['found', 'caught', 'clean', 'prevent', 'decision', 'scan', 'sound'].includes(e.kind)).pop();
   caption = important ? { text: important.text, kind: important.kind } : null;
   if (state.pending) caption = { text: state.pending.text, kind: 'found' };
   render();

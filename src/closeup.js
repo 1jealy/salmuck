@@ -37,7 +37,7 @@ export { SKIN, HAIR, CLOTHES, WOOD, WALL, LOCK, makeRaster, rampFor, stamp };
 const C = {
   ink: '#1b1820', white: '#ffffff', iris: '#2a2230', eyeWhite: '#f3efe8', irisBrown: '#3b2a24', mouth: '#8a3e36', lip: '#c86a5c', blush: '#f19a8a',
   tear: '#79c4ff', sweat: '#a9dcff', mole: '#5a3020',
-  frame: '#1e1c24', lensHi: '#d8eef6', lens: '#7fe8ff', camera: '#25252c',
+  frame: '#1e1c24', lensHi: '#d8eef6', lens: '#7fe8ff', lensLeak: '#3fa9ff', camera: '#25252c',
   stickerOut: '#c9bd8e', sticker: '#f3ecc8', stickerHi: '#fffbe8', stickerBack: '#ffffff',
   button: '#1c1c22', buttonHi: '#5c5c68', shine: '#c9e4ff',
   paper: '#f7f7f2', paperEdge: '#c9cbc2', print: '#c6cad0', pencil: '#4f5965',
@@ -278,6 +278,8 @@ function glassesOnFace(ctx, g) {
   px(ctx, 59, 30, 4, t, C.frame);
   px(ctx, 97, 30, 4, t, C.frame);
   if (g.glint) stamp(ctx, 94, 27, ['cc', 'cl'], { c: C.camera, l: C.lens });
+  // 렌즈 안쪽에서 새어 나오는 파란 빛 (실제 적발 징후)
+  if (g.leak) { px(ctx, EYE_X[1] + 4, 29 + t + 1, 2, 1, C.lens); px(ctx, EYE_X[1] + 5, 30 + t + 1, 1, 1, C.lensLeak); }
 }
 
 // ---------- 옷 ----------

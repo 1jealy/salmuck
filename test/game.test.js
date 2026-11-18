@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { newGame, makeView, makeRng, precheck, finishPrecheck, idCheck, patrol, endExam, afterCheck, nextPeriod, resolvePending, toggleFlag, submitReport, normalizeRoom, truth, student } from '../src/game.js';
+import { newGame, makeView, makeRng, scan, precheck, finishPrecheck, idCheck, patrol, endExam, afterCheck, nextPeriod, resolvePending, toggleFlag, submitReport, normalizeRoom, truth, student } from '../src/game.js';
 import { SLIPS, SCHEMES } from '../src/data.js';
 
 const ROOMS = Array.from({ length: 500 }, (_, i) => 1000 + i * 17);
@@ -112,27 +112,54 @@ test('켜진 휴대폰은 재난문자로 시험 전에 예방된다', () => {
   assert.equal(s.students.find((x) => x.slip === 'phoneOn').slipState, 'prevented');
 });
 
-test('스마트안경은 점심 전 점검에서는 깨끗하고 오후에는 적발된다', () => {
-  const room = ROOMS.find((r) => newGame(r).students.some((x) => x.scheme === 'aiGlasses'));
-  const early = newGame(room);
-  const seat = early.students.find((x) => x.scheme === 'aiGlasses').seat;
-  finishPrecheck(early);
-  toggleFlag(early, seat);
-  endExam(early);
-  while (early.pending) resolvePending(early, 'report');
-  afterCheck(early, seat);
-  assert.notEqual(student(early, seat).schemeState, 'caught');
-
-  const late = newGame(room);
-  finishPrecheck(late);
-  for (let p = 0; p < 3; p++) {
-    if (p === 2) toggleFlag(late, seat);
-    endExam(late);
-    while (late.pending) resolvePending(late, 'report');
+test('스마트안경은 바꿔 쓰기 전 점검에서는 깨끗하고, 바꾼 뒤에는 적발된다', () => {
+  const rooms = ROOMS.filter((r) => newGame(r).students.some((x) => x.scheme === 'aiGlasses'));
+  const timings = new Set();
+  for (const room of rooms.slice(0, 40)) {
+    const probe = newGame(room);
+    const x = probe.students.find((y) => y.scheme === 'aiGlasses');
+    timings.add(x.swapAt);
+    // 바꾸기 전 교시의 쉬는 시간 점검
+    if (x.swapAt > 0) {
+      const s = newGame(room);
+      finishPrecheck(s);
+      for (let p = 0; p < x.swapAt; p++) {
+        if (p === x.swapAt - 1) toggleFlag(s, x.seat);
+        endExam(s);
+        while (s.pending) resolvePending(s, 'report');
+        if (p < x.swapAt - 1 && s.phase === 'break') nextPeriod(s);
+      }
+      assert.equal(s.phase, 'break');
+      afterCheck(s, x.seat);
+      assert.notEqual(student(s, x.seat).schemeState, 'caught', `${room} 바꾸기 전인데 적발됨`);
+    }
+    // 바꾼 교시가 끝난 뒤 점검
+    const s = newGame(room);
+    finishPrecheck(s);
+    for (let p = 0; p <= x.swapAt; p++) {
+      if (p === x.swapAt) toggleFlag(s, x.seat);
+      endExam(s);
+      while (s.pending) resolvePending(s, 'report');
+      if (p < x.swapAt && s.phase === 'break') nextPeriod(s);
+    }
+    assert.equal(s.phase, 'break');
+    afterCheck(s, x.seat);
+    assert.equal(student(s, x.seat).schemeState, 'caught', `${room} 바꾼 뒤인데 못 잡음`);
   }
-  assert.equal(late.phase, 'break');
-  afterCheck(late, seat);
-  assert.equal(student(late, seat).schemeState, 'caught');
+  assert.equal(timings.size, 3, '교체 시점 3가지가 모두 나온다');
+});
+
+test('블루투스 탐지는 2번만, 무선 장비를 쓰는 자리는 신호가 잡힌다', () => {
+  const room = ROOMS.find((r) => newGame(r).students.some((x) => x.scheme === 'earpiece'));
+  const s = newGame(room);
+  finishPrecheck(s);
+  const x = s.students.find((y) => y.scheme === 'earpiece');
+  const first = scan(s, x.seat);
+  assert.ok(first === 'strong' || first === 'weak');
+  scan(s, x.seat);
+  assert.equal(s.scanLeft, 0);
+  assert.equal(scan(s, x.seat), false);
+  assert.equal(s.complaints, 0, '탐지는 민원을 만들지 않는다');
 });
 
 test('어떤 판이든 끝까지 진행되고 등급은 1~9', () => {

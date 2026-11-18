@@ -187,7 +187,7 @@ function detailRow(ctx, state, row, o) {
     if (mood === 'nervous' || mood === 'shocked') stamp(ctx, x + 6, hy, ['.s', 'ss'], { s: C.sweat });
     px(ctx, x, ey + 2, 1, 1, skin[1]);
     if (look.glasses) {
-      const thick = s.scheme === 'aiGlasses' && state.period > SCHEMES.aiGlasses.swapAfter && state.phase !== 'precheck';
+      const thick = s.scheme === 'aiGlasses' && s.swapAt != null && state.period >= s.swapAt && state.phase !== 'precheck';
       const col = C.frame;
       stamp(ctx, x - 5, ey - 2, thick
         ? ['kkkk.kkkk', 'k..kkk..k', 'kkkk.kkkk']

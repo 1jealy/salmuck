@@ -19,7 +19,15 @@ export const PRECHECK = {
   cost: { id: 1, clothes: 2, glasses: 2, pockets: 1, announce: 1 },
 };
 
-export const BUDGET = { idCheck: 3, patrol: 3, afterCheck: 1 };
+export const BUDGET = { idCheck: 3, patrol: 3, afterCheck: 1, scan: 2 };
+
+// 스마트안경으로 바꿔 쓰는 시점. 실제 사례: 연세대는 시험지 배부 직후, 초·중·고 사례는 시험 중에 바꿔 씀.
+// 값은 장비를 쓰기 시작하는 교시(0=1교시).
+export const SWAP_TIMING = [
+  { at: 0, label: '시험지를 받은 직후' },
+  { at: 1, label: '1교시가 끝난 쉬는 시간' },
+  { at: 2, label: '점심시간' },
+];
 
 export const SURNAMES = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오', '서', '신', '권', '황', '안', '송', '전', '홍'];
 export const GIVEN_NAMES = [
@@ -81,7 +89,8 @@ export const SLIPS = {
 // ---------- 계획형: 절차를 알고 오래 준비해 온 사람 ----------
 // 2026년 11월 보도 기준 장비 경향을 반영했다. 단서는 확대 그림(pixel.js drawCloseup)에 그린다.
 // 감독관 눈에 보이는 징후만 다룬다. 만드는 법이나 숨기는 법은 다루지 않는다.
-//   swapAfter: 이 교시가 끝난 뒤(점심) 장비를 꺼낸다. 그 전에는 검사해도 깨끗하다.
+//   swap: 오전 점검을 통과한 뒤 장비로 바꿔 쓴다. 시점은 학생마다 SWAP_TIMING에서 고른다.
+//   wireless: 블루투스 탐지 앱에 신호가 잡히는 장비
 //   detect: 쉬는 시간 정밀 점검(금속탐지기)에서 찾아낼 확률. 작은 장비일수록 낮다.
 //   pose: 앞에서 눈에 띌 때의 손 동작 (glasses | ear | belly | tap | penUp)
 //   blank: 장비를 쓰는 동안 문제지에 풀이 흔적이 없을 확률
@@ -90,7 +99,8 @@ export const SCHEMES = {
   aiGlasses: {
     name: '스마트안경 + 생성형 AI',
     needsGlasses: true,
-    swapAfter: 1,
+    swap: true,
+    wireless: true,
     detect: 1,
     pose: 'glasses',
     blank: 0.7,
@@ -98,9 +108,10 @@ export const SCHEMES = {
     found: '안경다리 안쪽에서 렌즈 구멍과 배터리가 나왔다. 오전에 검사받은 안경이 아니다.',
     caught: '말없이 고개를 숙인다.',
     calm: ['네, 확인하세요.', '얼마든지요.'],
-    reveal: '오전엔 검사용 평범한 안경, 점심에 똑같이 생긴 스마트안경으로 바꿔 썼다. 확대 그림: 오후에 테가 두꺼워지고 렌즈 점이 반짝였다.',
+    reveal: '점검 때는 평범한 안경, {swap} 똑같이 생긴 스마트안경으로 바꿔 썼다. 확대 그림: 테가 두꺼워지고, 렌즈에 파란 빛이 새거나 테 모서리에 카메라 점이 보였다.',
   },
   buttonCam: {
+    wireless: true,
     name: '단추형 초소형 카메라',
     detect: 1,
     clothes: 'shirt',
@@ -124,6 +135,7 @@ export const SCHEMES = {
     reveal: '지급 사인펜과 닮은 카메라 펜으로 바꿔치기했다. 확대 그림: 지급 펜의 흰 띠가 없고 뚜껑 끝에 검은 점이 있었다.',
   },
   earpiece: {
+    wireless: true,
     earsVisible: true, // 귀를 덮는 머리 모양이면 단서가 안 보이므로 짧은 머리로 바꾼다
     name: '쌀알 크기 이어폰',
     detect: 0.5,
@@ -137,6 +149,7 @@ export const SCHEMES = {
     reveal: '귀 속 초소형 이어폰으로 답을 들었다. 확대 그림: 오른쪽 귓구멍 안에 작은 덩어리가 보였고, 문제지에 풀이가 없었다.',
   },
   vibration: {
+    wireless: true,
     name: '몸에 붙인 진동 수신기',
     detect: 0.8,
     pose: 'belly',
@@ -149,6 +162,7 @@ export const SCHEMES = {
     reveal: '허리에 붙인 진동 수신기로 답 번호를 받았다. 확대 그림: 허리춤이 불룩했고 가끔 "~" 진동이 보였다.',
   },
   hybridWatch: {
+    wireless: true,
     name: '아날로그로 위장한 스마트워치',
     detect: 1,
     watch: 'hybrid',
