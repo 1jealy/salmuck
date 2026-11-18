@@ -2,7 +2,7 @@
 import { PERIODS, PRECHECK } from './data.js';
 import { newGame, precheck, canPrecheck, finishPrecheck, idCheck, canIdCheck, suspects, patrol, canPatrol, endExam, afterCheck, canAfterCheck, nextPeriod, resolvePending, toggleFlag, submitReport, truth, outcome, student, label, clockText, snapshots, normalizeRoom, randomRoom } from './game.js';
 import { drawScene, seatAt, SCENE_W, SCENE_H } from './pixel.js';
-import { drawCloseup, CLOSE_W, CLOSE_H } from './closeup.js';
+import { drawCloseup, insetsFor, drawInset, CLOSE_W, CLOSE_H } from './closeup.js';
 import { renderCard } from './card.js';
 
 const $ = (id) => document.getElementById(id);
@@ -108,6 +108,26 @@ function renderViewer() {
   closeCtx.fillRect(0, 0, CLOSE_W, CLOSE_H);
   if (entry && entry.view) drawCloseup(closeCtx, entry.view);
   else drawPlaceholder();
+  // 확대 창: 수험표 사진, 벗긴 안경, 소지품, 손목시계는 그림 밖 별도 칸에
+  const insets = $('v-insets');
+  insets.innerHTML = '';
+  if (entry && entry.view) {
+    insetsFor(entry.view).forEach((it) => {
+      const fig = document.createElement('figure');
+      const c = document.createElement('canvas');
+      c.width = it.w;
+      c.height = it.h;
+      const scale = it.w > 30 ? 2 : 3;
+      c.style.width = `${it.w * scale}px`;
+      c.style.height = `${it.h * scale}px`;
+      drawInset(c.getContext('2d'), entry.view, it.kind);
+      const cap = document.createElement('figcaption');
+      cap.textContent = it.label;
+      fig.append(c, cap);
+      insets.appendChild(fig);
+    });
+  }
+  insets.hidden = !insets.children.length;
   const cap = $('v-caption');
   cap.textContent = caption ? caption.text : '';
   cap.className = `v-caption${caption ? ` k-${caption.kind}` : ''}`;
