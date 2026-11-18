@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { newGame, makeView, makeRng, scan, precheck, finishPrecheck, idCheck, patrol, endExam, afterCheck, nextPeriod, resolvePending, toggleFlag, submitReport, normalizeRoom, truth, student } from '../src/game.js';
-import { SLIPS, SCHEMES } from '../src/data.js';
+import { SLIPS, SCHEMES, VOICES } from '../src/data.js';
 
 const ROOMS = Array.from({ length: 500 }, (_, i) => 1000 + i * 17);
 
@@ -214,6 +214,32 @@ test('스티커 습관은 단추 있는 옷에만, 이어폰 수험생은 귀가
       assert.ok(x.look.face && x.look.face.shape);
     });
   }
+});
+
+test('대사: 학생마다 말투가 있고, 장면 문장이 다양하다', () => {
+  const voices = new Set();
+  const tellTexts = new Set();
+  for (const room of ROOMS.slice(0, 200)) {
+    const s = newGame(room);
+    s.students.forEach((x) => { assert.ok(VOICES[x.voice], `말투 없음 ${room}`); voices.add(x.voice); });
+    s.schedule.flat().filter((e) => e.kind !== 'ambient').forEach((e) => tellTexts.add(e.text.replace(/^\d+번/, '').replace(/\d+번/, '')));
+  }
+  assert.equal(voices.size, Object.keys(VOICES).length);
+  assert.ok(tellTexts.size >= 40, `장면 문장 종류 ${tellTexts.size}`);
+});
+
+test('특정하기 쉬움: 계획형은 앞에서 보이는 장면이 2번 이상 나온다', () => {
+  let ok = 0;
+  let total = 0;
+  for (const room of ROOMS) {
+    const s = newGame(room);
+    s.students.filter((x) => x.scheme).forEach((x) => {
+      total += 1;
+      const n = s.schedule.flat().filter((e) => e.seat === x.seat).length;
+      if (n >= 2) ok += 1;
+    });
+  }
+  assert.ok(ok / total >= 0.9, `${ok}/${total}`);
 });
 
 test('실수형 데이터 형식', () => {

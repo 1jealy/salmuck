@@ -1,6 +1,6 @@
 // 게임 규칙. 화면과 분리된 순수 로직. 상태는 평범한 JSON 객체다.
 // 관찰 결과는 글이 아니라 "그림 상태(view)"로 남긴다. pixel.js가 그것을 확대 그림으로 그린다.
-import { SEATS, PERIODS, PRECHECK, BUDGET, SWAP_TIMING, SURNAMES, GIVEN_NAMES, SLIPS, SCHEMES, HABITS, PROTEST, AMBIENT, LOOKS } from './data.js';
+import { SEATS, PERIODS, PRECHECK, BUDGET, SWAP_TIMING, SURNAMES, GIVEN_NAMES, SLIPS, SCHEMES, HABITS, VOICES, PROTEST, AMBIENT, LOOKS } from './data.js';
 
 // ---------- 난수 ----------
 export function makeRng(seed) {
@@ -59,7 +59,7 @@ export function clock(state) {
   const p = PERIODS[state.period];
   switch (state.phase) {
     case 'precheck': return addMin(PRECHECK.start, state.minutes);
-    case 'exam': return addMin(p.start, (BUDGET.patrol - state.patrolLeft) * 20 + (BUDGET.idCheck - state.idLeft) * 2 + 5);
+    case 'exam': return addMin(p.start, (BUDGET.patrol - state.patrolLeft) * 15 + (BUDGET.idCheck - state.idLeft) * 2 + 5);
     case 'ending':
     case 'bell':
     case 'break': return p.end;
@@ -102,6 +102,7 @@ export function newGame(room) {
       },
     },
     mole: rng.chance(0.3),
+    voice: rng.pick(Object.keys(VOICES)),
     watch: rng.chance(0.35) ? 'analog' : null,
     slip: null,
     scheme: null,
@@ -134,7 +135,7 @@ export function newGame(room) {
     if (s.slip === 'watch') s.watch = 'digital';
   }
   students.filter((s) => !s.scheme && !s.slip).forEach((s) => {
-    if (!rng.chance(0.7)) return;
+    if (!rng.chance(0.45)) return; // 헷갈리게 하는 무고한 습관은 절반 이하로
     const options = Object.keys(HABITS).filter((k) => (!HABITS[k].needsGlasses || s.look.glasses) && (!HABITS[k].needsButtons || s.look.clothes.buttons));
     s.habit = rng.pick(options);
     if (HABITS[s.habit].watch) s.watch = HABITS[s.habit].watch;
@@ -150,7 +151,7 @@ export function newGame(room) {
       if (h.period != null) periods = [h.period];
       else if (h.falls) periods = [rng.int(0, 3)];
       else periods = rng.shuffle([0, 1, 2, 3]).slice(0, rng.int(1, 2));
-      periods.forEach((p) => schedule[p].push({ kind: h.falls ? 'sticker' : 'habit', seat: s.seat, text: fill(h.line, s.seat) }));
+      periods.forEach((p) => schedule[p].push({ kind: h.falls ? 'sticker' : 'habit', seat: s.seat, text: fill(rng.pick(h.lines), s.seat) }));
     }
     if (s.scheme) {
       const t = SCHEMES[s.scheme].tells;
@@ -227,8 +228,8 @@ export function makeView(state, s, rng, mode = {}) {
   const [ch, cm] = clock(state);
 
   let pose = 'desk';
-  if (ev && rng.chance(0.75)) pose = (sc && sc.pose) || (h && h.pose) || 'desk';
-  else if (active && sc.pose !== 'none' && rng.chance(0.35)) pose = sc.pose;
+  if (ev && rng.chance(0.85)) pose = (sc && sc.pose) || (h && h.pose) || 'desk';
+  else if (active && sc.pose !== 'none' && rng.chance(0.5)) pose = sc.pose;
   if (pose === 'none') pose = 'desk';
 
   let watch = null;
@@ -236,7 +237,7 @@ export function makeView(state, s, rng, mode = {}) {
   else if (s.watch === 'analog' || s.watch === 'hybrid') {
     let wh = ch;
     let wm = cm;
-    if (s.watch === 'hybrid' && active && rng.chance(0.65)) {
+    if (s.watch === 'hybrid' && active && rng.chance(0.85)) {
       wh = rng.int(1, 12);
       wm = rng.pick([0, 15, 30, 45]);
     }
@@ -244,7 +245,7 @@ export function makeView(state, s, rng, mode = {}) {
   }
 
   let sticker = s.sticker ? 'on' : 'none';
-  if (s.sticker && ((ev && ev.kind === 'sticker') || (s.scheme === 'buttonCam' && active && rng.chance(0.4)))) sticker = 'missing';
+  if (s.sticker && ((ev && ev.kind === 'sticker') || (s.scheme === 'buttonCam' && active && rng.chance(0.65)))) sticker = 'missing';
   if (sticker === 'on' && h && h.peeled) sticker = 'peeled';
 
   const usingAnswers = active && sc.blank > 0 && rng.chance(sc.blank);
@@ -258,15 +259,15 @@ export function makeView(state, s, rng, mode = {}) {
     pose,
     faceMole: s.mole,
     glasses: s.look.glasses
-      ? { thick: s.scheme === 'aiGlasses' && active, glint: s.scheme === 'aiGlasses' && active && rng.chance(0.5), leak: s.scheme === 'aiGlasses' && active && rng.chance(0.45), off: !!mode.glassesOff }
+      ? { thick: s.scheme === 'aiGlasses' && active, glint: s.scheme === 'aiGlasses' && active && rng.chance(0.7), leak: s.scheme === 'aiGlasses' && active && rng.chance(0.65), off: !!mode.glassesOff }
       : null,
     sticker,
     bigButton: s.scheme === 'buttonCam',
     sleeves: !!mode.sleeves,
     watch,
-    earBlob: s.scheme === 'earpiece' && active && rng.chance(0.55),
-    waist: s.scheme === 'vibration' && (active || !!mode.sleeves) && rng.chance(0.6),
-    buzz: s.scheme === 'vibration' && active && rng.chance(0.4),
+    earBlob: s.scheme === 'earpiece' && active && rng.chance(0.85),
+    waist: s.scheme === 'vibration' && (active || !!mode.sleeves) && rng.chance(0.85),
+    buzz: s.scheme === 'vibration' && active && rng.chance(0.6),
     pocketBulge: slip && slip.pocket ? (s.slip === 'earbuds' ? 'small' : 'phone') : null,
     fakePen: s.scheme === 'penCam' && state.phase !== 'precheck',
     paper: state.phase === 'precheck' ? 'none' : usingAnswers || (h && h.blank) ? 'blank' : 'scribbled',
@@ -278,7 +279,8 @@ export function makeView(state, s, rng, mode = {}) {
 
 function askSlip(state, s, text, view = null) {
   const rng = rngFor(state, 9);
-  state.pending = { seat: s.seat, text, reaction: rng.pick(SLIPS[s.slip].reaction) };
+  const voice = VOICES[s.voice] || VOICES.timid;
+  state.pending = { seat: s.seat, text, reaction: rng.chance(0.65) ? rng.pick(SLIPS[s.slip].reaction) : rng.pick(voice.slip) };
   s.mood = 'nervous';
   log(state, 'found', text, s.seat, view);
 }
@@ -432,7 +434,7 @@ export function patrol(state, seat) {
   }
   log(state, 'view', '가까이 봄', seat, view);
   // 가까이 지나갈 때 들리는 작은 전자음 (국가기술자격시험 적발 징후)
-  if (s.scheme === 'aiGlasses' && schemeActive(s, state.period, state.phase) && rng.chance(0.35)) {
+  if (s.scheme === 'aiGlasses' && schemeActive(s, state.period, state.phase) && rng.chance(0.55)) {
     log(state, 'sound', '지나가는 순간 아주 작은 "삐" 소리가 들렸다.', seat);
   }
   return true;
@@ -464,9 +466,9 @@ export function scan(state, seat) {
   state.actionIndex += 1;
   const near = neighbors(seat).some((n) => emitting(student(state, n), state));
   let level;
-  if (emitting(s, state)) level = rng.chance(0.85) ? 'strong' : 'weak';
-  else if (near) level = rng.chance(0.6) ? 'weak' : 'none';
-  else level = rng.chance(0.08) ? 'weak' : 'none';
+  if (emitting(s, state)) level = rng.chance(0.95) ? 'strong' : 'weak';
+  else if (near) level = rng.chance(0.4) ? 'weak' : 'none';
+  else level = rng.chance(0.05) ? 'weak' : 'none';
   const text = {
     strong: '블루투스 탐지: 신호가 강하다. 이 자리 바로 근처에서 나오는 신호다.',
     weak: '블루투스 탐지: 약한 신호가 잡힌다. 이 자리인지 옆자리인지 확실하지 않다.',
@@ -535,7 +537,9 @@ export function afterCheck(state, seat) {
   if (s.scheme && schemeActive(s, state.period, state.phase) && rng.chance(SCHEMES[s.scheme].detect)) {
     s.schemeState = 'caught';
     s.mood = 'shocked';
-    log(state, 'caught', `${SCHEMES[s.scheme].found} ${SCHEMES[s.scheme].caught}`, seat);
+    const voice = VOICES[s.voice] || VOICES.dry;
+    const caught = rng.chance(0.6) ? rng.pick(SCHEMES[s.scheme].caught) : rng.pick(voice.caught);
+    log(state, 'caught', `${SCHEMES[s.scheme].found} ${caught}`, seat);
     return true;
   }
   const slip = s.slip && !s.slipState ? SLIPS[s.slip] : null;
@@ -548,10 +552,12 @@ export function afterCheck(state, seat) {
     const sc = SCHEMES[s.scheme];
     s.mood = 'calm';
     const miss = schemeActive(s, state.period, state.phase) && sc.missText ? sc.missText : '아무것도 나오지 않았다.';
-    log(state, 'clean', `${miss} "${rng.pick(sc.calm)}" 민원 1건.`, seat);
+    const line = rng.chance(0.5) ? rng.pick(sc.calm) : rng.pick((VOICES[s.voice] || VOICES.dry).calm);
+    log(state, 'clean', `${miss} "${line}" 민원 1건.`, seat);
   } else {
     s.mood = 'angry';
-    log(state, 'clean', `아무것도 나오지 않았다. "${rng.pick(PROTEST)}" 민원 1건.`, seat);
+    const line = rng.chance(0.75) ? rng.pick((VOICES[s.voice] || VOICES.sulky).protest) : rng.pick(PROTEST);
+    log(state, 'clean', `아무것도 나오지 않았다. "${line}" 민원 1건.`, seat);
   }
   return true;
 }
